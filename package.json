@@ -4,7 +4,8 @@
   "description": "An MQTT broker designed to run over WebSockets on Firebase/Cloud Run",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
     "aedes": "^0.51.1",
