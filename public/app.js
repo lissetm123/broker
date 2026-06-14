@@ -3,6 +3,8 @@
 let mqttClient = null;
 const clientSubscriptions = new Set();
 let statsInterval = null;
+let idToken = null;
+let authBypassed = false;
 
 // DOM Selectors
 const wsUrlInput = document.getElementById('wsUrl');
@@ -65,9 +67,13 @@ window.addEventListener('DOMContentLoaded', () => {
   // 3. Set a default JSON payload for Publish tab
   setPreset('climate');
 
-  // 4. Start polling server stats
-  fetchServerStats();
-  statsInterval = setInterval(fetchServerStats, 2500);
+  // 4. Initialize Firebase Authentication & Stats Polling
+  initFirebaseAuth();
+  statsInterval = setInterval(() => {
+    if (idToken || authBypassed) {
+      fetchServerStats();
+    }
+  }, 2500);
 
   // 5. Connect UI event handlers
   setupUIEventHandlers();
@@ -133,7 +139,9 @@ function formatUptime(seconds) {
 // Fetch Server Metrics from express REST API
 async function fetchServerStats() {
   try {
-    const response = await fetch('/api/stats');
+    const headers = {};
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const response = await fetch('/api/stats', { headers });
     if (!response.ok) throw new Error('API request failed');
     const data = await response.json();
 
@@ -184,7 +192,11 @@ async function fetchServerStats() {
 
 // Connect the built-in Console MQTT client
 function connectClient() {
-  const url = wsUrlInput.value.trim();
+  let url = wsUrlInput.value.trim();
+  if (idToken && !url.includes('token=')) {
+    const separator = url.includes('?') ? '&' : '?';
+    url = `${url}${separator}token=${encodeURIComponent(idToken)}`;
+  }
   const clientId = clientIdInput.value.trim() || 'Aether-Console-Default';
   const clean = cleanSessionSelect.value === 'true';
   const username = usernameInput.value.trim();
@@ -458,7 +470,9 @@ window.setPreset = function(type) {
 // User Management Functions
 async function fetchUsersList() {
   try {
-    const response = await fetch('/api/users');
+    const headers = {};
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const response = await fetch('/api/users', { headers });
     if (!response.ok) throw new Error('Failed to fetch user accounts');
     const users = await response.json();
     renderUsersList(users);
@@ -522,9 +536,11 @@ async function addUser(e) {
   }
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
     const response = await fetch('/api/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ username, password })
     });
     
@@ -549,8 +565,11 @@ async function deleteUser(username) {
   if (!confirm(`Are you sure you want to delete the credentials for "${username}"?`)) return;
 
   try {
+    const headers = {};
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
     const response = await fetch(`/api/users/${username}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to delete credentials');
@@ -562,5 +581,100 @@ async function deleteUser(username) {
     await fetchServerStats();
   } catch (err) {
     appendTerminalLine('SystemError', `Failed to delete credentials: ${err.message}`);
+  }
+}
+
+// Firebase Authentication and Client-side flow setup
+async function initFirebaseAuth() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) throw new Error('Failed to load Firebase config from server');
+    const config = await response.json();
+
+    // If no Firebase config keys are available on server, bypass login overlay (developer/local mode)
+    if (!config.apiKey || !config.projectId) {
+      console.log('[AUTH] Firebase App config missing on server. Bypassing Google Sign-In.');
+      authBypassed = true;
+      document.getElementById('loginOverlay').classList.add('fade-out');
+      document.getElementById('appContainer').style.display = 'flex';
+      
+      // Load tables/metrics directly
+      fetchServerStats();
+      fetchUsersList();
+      return;
+    }
+
+    // Initialize Firebase client
+    firebase.initializeApp(config);
+    const auth = firebase.auth();
+    const provider = new firebase.auth.GoogleAuthProvider();
+
+    // Bind login button Click
+    document.getElementById('btnGoogleLogin').addEventListener('click', () => {
+      document.getElementById('loginLoading').classList.remove('hidden');
+      document.getElementById('loginError').classList.add('hidden');
+      
+      auth.signInWithPopup(provider).catch(err => {
+        document.getElementById('loginLoading').classList.add('hidden');
+        document.getElementById('loginError').textContent = `Google sign-in failed: ${err.message}`;
+        document.getElementById('loginError').classList.remove('hidden');
+      });
+    });
+
+    // Listen for Auth changes
+    auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        document.getElementById('loginLoading').classList.remove('hidden');
+        try {
+          idToken = await user.getIdToken(true);
+          
+          // Verify ID token against server /api/stats endpoint
+          const testResponse = await fetch('/api/stats', {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+
+          if (testResponse.status === 403) {
+            throw new Error('Access Denied: Only the administrator account is allowed access.');
+          }
+          if (!testResponse.ok) {
+            throw new Error(`Auth verification failed: ${testResponse.statusText}`);
+          }
+
+          // Verification Success: Hide login, show dashboard
+          document.getElementById('loginOverlay').classList.add('fade-out');
+          document.getElementById('appContainer').style.display = 'flex';
+          document.getElementById('loginLoading').classList.add('hidden');
+
+          // Append token to default WS client URL field
+          updateWsUrlWithToken();
+
+          // Load stats
+          fetchServerStats();
+          fetchUsersList();
+        } catch (err) {
+          console.error(err);
+          document.getElementById('loginLoading').classList.add('hidden');
+          document.getElementById('loginError').textContent = err.message;
+          document.getElementById('loginError').classList.remove('hidden');
+          auth.signOut();
+        }
+      } else {
+        idToken = null;
+        document.getElementById('loginOverlay').classList.remove('fade-out');
+        document.getElementById('appContainer').style.display = 'none';
+      }
+    });
+  } catch (err) {
+    console.error('[AUTH] Failed to initialize Firebase Auth client:', err);
+    document.getElementById('loginError').textContent = `Configuration Error: ${err.message}`;
+    document.getElementById('loginError').classList.remove('hidden');
+  }
+}
+
+function updateWsUrlWithToken() {
+  if (!wsUrlInput) return;
+  const currentVal = wsUrlInput.value.split('?')[0];
+  if (idToken) {
+    wsUrlInput.value = `${currentVal}?token=${encodeURIComponent(idToken)}`;
   }
 }

@@ -8,8 +8,38 @@ const aedesFactory = require('aedes');
 const aedes = aedesFactory();
 
 // Initialize Database
+const admin = require('firebase-admin');
 const usersDb = require('./users-db');
 usersDb.init();
+
+// Middleware to verify Firebase ID Token and restrict to ADMIN_EMAIL
+async function requireAdmin(req, res, next) {
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+  
+  // If no administrator email is configured, bypass verification (developer/local mode)
+  if (!ADMIN_EMAIL) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: missing authorization header' });
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    if (decodedToken.email !== ADMIN_EMAIL) {
+      console.log(`[AUTH] Access denied for user: ${decodedToken.email} (Admin email is configured to: ${ADMIN_EMAIL})`);
+      return res.status(403).json({ error: 'Forbidden: only the administrator is allowed' });
+    }
+    req.user = decodedToken;
+    next();
+  } catch (err) {
+    console.error(`[AUTH] ID Token verification failed: ${err.message}`);
+    return res.status(401).json({ error: `Unauthorized: ${err.message}` });
+  }
+}
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -21,8 +51,43 @@ app.use(express.static('public'));
 // Create HTTP server
 const server = http.createServer(app);
 
-// Create WebSocket server attached to the HTTP server
-const wss = new ws.Server({ server: server });
+// Create WebSocket server attached to the HTTP server (no server, upgrade manually)
+const wss = new ws.Server({ noServer: true });
+
+server.on('upgrade', async (request, socket, head) => {
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+  
+  if (ADMIN_EMAIL) {
+    try {
+      const parsedUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+      const token = parsedUrl.searchParams.get('token');
+      
+      if (!token) {
+        console.log(`[AUTH] WS Upgrade rejected: missing token query parameter`);
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      if (decodedToken.email !== ADMIN_EMAIL) {
+        console.log(`[AUTH] WS Upgrade rejected: email ${decodedToken.email} is not the administrator`);
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    } catch (err) {
+      console.log(`[AUTH] WS Upgrade handshake rejected: ${err.message}`);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
 
 wss.on('connection', function (conn, req) {
   const stream = websocketStream(conn);
@@ -120,8 +185,37 @@ aedes.on('publish', function (packet, client) {
   }
 });
 
-// User management API endpoints
-app.get('/api/users', async (req, res) => {
+// Expose public Firebase configuration parameters
+app.get('/api/config', (req, res) => {
+  const config = {
+    apiKey: process.env.FIREBASE_API_KEY || "",
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
+    projectId: process.env.FIREBASE_PROJECT_ID || ""
+  };
+
+  // Attempt to parse standard Firebase configuration environment variable
+  if (process.env.FIREBASE_CONFIG) {
+    try {
+      const parsed = JSON.parse(process.env.FIREBASE_CONFIG);
+      config.apiKey = config.apiKey || parsed.apiKey;
+      config.authDomain = config.authDomain || parsed.authDomain;
+      config.projectId = config.projectId || parsed.projectId;
+    } catch (e) {
+      console.error('Failed to parse FIREBASE_CONFIG env var:', e.message);
+    }
+  }
+
+  // Auto-resolve project ID from initialized Admin SDK if missing
+  if (!config.projectId && admin && admin.apps.length > 0) {
+    const appOptions = admin.apps[0].options;
+    config.projectId = appOptions.projectId || (appOptions.credential && appOptions.credential.projectId);
+  }
+
+  res.json(config);
+});
+
+// User management API endpoints (enforced admin security)
+app.get('/api/users', requireAdmin, async (req, res) => {
   try {
     const list = await usersDb.getUsers();
     res.json(list);
@@ -130,7 +224,7 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', requireAdmin, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required.' });
@@ -147,7 +241,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.delete('/api/users/:username', async (req, res) => {
+app.delete('/api/users/:username', requireAdmin, async (req, res) => {
   const { username } = req.params;
   try {
     const success = await usersDb.deleteUser(username);
@@ -161,8 +255,8 @@ app.delete('/api/users/:username', async (req, res) => {
   }
 });
 
-// REST Endpoint for broker stats
-app.get('/api/stats', async (req, res) => {
+// REST Endpoint for broker stats (enforced admin security)
+app.get('/api/stats', requireAdmin, async (req, res) => {
   try {
     const users = await usersDb.getUsers();
     res.json({
