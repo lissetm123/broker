@@ -507,6 +507,12 @@ function renderUsersList(users) {
     tagSpan.className = 'username-tag';
     tagSpan.innerHTML = `<i data-lucide="user"></i> <span>${username}</span>`;
 
+    const btnKey = document.createElement('button');
+    btnKey.className = 'btn-change-password';
+    btnKey.innerHTML = '<i data-lucide="key"></i>';
+    btnKey.title = `Change password for ${username}`;
+    btnKey.addEventListener('click', () => changeMqttPassword(username));
+
     const btnDelete = document.createElement('button');
     btnDelete.className = 'btn-delete-user';
     btnDelete.innerHTML = '<i data-lucide="trash-2"></i>';
@@ -514,6 +520,7 @@ function renderUsersList(users) {
     btnDelete.addEventListener('click', () => deleteUser(username));
 
     li.appendChild(tagSpan);
+    li.appendChild(btnKey);
     li.appendChild(btnDelete);
     usersList.appendChild(li);
   });
@@ -609,7 +616,7 @@ async function initFirebaseAuth() {
     const auth = firebase.auth();
     const provider = new firebase.auth.GoogleAuthProvider();
 
-    // Bind login button Click
+    // Bind Google login button Click
     document.getElementById('btnGoogleLogin').addEventListener('click', () => {
       document.getElementById('loginLoading').classList.remove('hidden');
       document.getElementById('loginError').classList.add('hidden');
@@ -620,6 +627,64 @@ async function initFirebaseAuth() {
         document.getElementById('loginError').classList.remove('hidden');
       });
     });
+
+    // Bind Email/Password login form submit
+    const formAdminLogin = document.getElementById('formAdminLogin');
+    const adminEmailInput = document.getElementById('adminEmail');
+    const adminPasswordInput = document.getElementById('adminPassword');
+    
+    if (formAdminLogin) {
+      formAdminLogin.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = adminEmailInput.value.trim();
+        const password = adminPasswordInput.value;
+        
+        document.getElementById('loginLoading').classList.remove('hidden');
+        document.getElementById('loginError').classList.add('hidden');
+        
+        auth.signInWithEmailAndPassword(email, password).catch(err => {
+          document.getElementById('loginLoading').classList.add('hidden');
+          document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
+          document.getElementById('loginError').classList.remove('hidden');
+        });
+      });
+    }
+
+    // Bind header Sign Out button click
+    const btnSignOut = document.getElementById('btnSignOut');
+    if (btnSignOut) {
+      btnSignOut.addEventListener('click', () => {
+        auth.signOut().catch(err => {
+          console.error('[AUTH] Sign out failed:', err);
+        });
+      });
+    }
+
+    // Bind Admin Change Password button click
+    const btnChangeAdminPassword = document.getElementById('btnChangeAdminPassword');
+    if (btnChangeAdminPassword) {
+      btnChangeAdminPassword.addEventListener('click', async () => {
+        const currentUser = auth.currentUser;
+        if (!currentUser) return;
+        
+        const newPassword = prompt(`Enter new password for Admin "${currentUser.email}" (minimum 6 characters):`);
+        if (!newPassword) return;
+        if (newPassword.length < 6) {
+          alert('Password must be at least 6 characters.');
+          return;
+        }
+        
+        try {
+          await currentUser.updatePassword(newPassword);
+          alert('Administrator password changed successfully!');
+          appendTerminalLine('System', 'Administrator account password updated successfully.');
+        } catch (err) {
+          console.error(err);
+          alert(`Failed to change password: ${err.message}`);
+          appendTerminalLine('SystemError', `Failed to update Admin password: ${err.message}`);
+        }
+      });
+    }
 
     // Listen for Auth changes
     auth.onAuthStateChanged(async (user) => {
@@ -645,6 +710,20 @@ async function initFirebaseAuth() {
           document.getElementById('appContainer').style.display = 'flex';
           document.getElementById('loginLoading').classList.add('hidden');
 
+          // Show Sign Out buttons in header
+          if (btnSignOut) btnSignOut.style.display = 'block';
+          document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'block');
+
+          // Show change admin password panel if logged in via Email/Password credentials
+          const isEmailProvider = user.providerData.some(p => p.providerId === 'password');
+          if (isEmailProvider) {
+            document.getElementById('adminActionsArea').style.display = 'block';
+            document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'block');
+          } else {
+            document.getElementById('adminActionsArea').style.display = 'none';
+            document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
+          }
+
           // Append token to default WS client URL field
           updateWsUrlWithToken();
 
@@ -662,6 +741,12 @@ async function initFirebaseAuth() {
         idToken = null;
         document.getElementById('loginOverlay').classList.remove('fade-out');
         document.getElementById('appContainer').style.display = 'none';
+
+        // Hide Sign Out and Admin Password controls
+        if (btnSignOut) btnSignOut.style.display = 'none';
+        document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'none');
+        document.getElementById('adminActionsArea').style.display = 'none';
+        document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
       }
     });
   } catch (err) {
@@ -676,5 +761,33 @@ function updateWsUrlWithToken() {
   const currentVal = wsUrlInput.value.split('?')[0];
   if (idToken) {
     wsUrlInput.value = `${currentVal}?token=${encodeURIComponent(idToken)}`;
+  }
+}
+
+// Change MQTT Device Password handler
+async function changeMqttPassword(username) {
+  if (!username) return;
+  const newPassword = prompt(`Enter new password for MQTT account "${username}" (minimum 6 characters):`);
+  if (!newPassword) return;
+  if (newPassword.length < 6) {
+    alert('Password must be at least 6 characters.');
+    return;
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ username, password: newPassword })
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to update credentials');
+
+    appendTerminalLine('System', `Password updated successfully for account: "${username}"`);
+  } catch (err) {
+    appendTerminalLine('SystemError', `Failed to update password for "${username}": ${err.message}`);
   }
 }
