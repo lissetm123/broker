@@ -44,6 +44,13 @@ const valSubscriptions = document.getElementById('valSubscriptions');
 const valMemory = document.getElementById('valMemory');
 const valUptimeDetailed = document.getElementById('valUptimeDetailed');
 
+// User Management DOM Selectors
+const formAddUser = document.getElementById('formAddUser');
+const newUsernameInput = document.getElementById('newUsername');
+const newPasswordInput = document.getElementById('newPassword');
+const usersList = document.getElementById('usersList');
+const userCountBadge = document.getElementById('userCountBadge');
+
 // Default Initialization
 window.addEventListener('DOMContentLoaded', () => {
   // 1. Auto-generate Client ID
@@ -64,6 +71,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // 5. Connect UI event handlers
   setupUIEventHandlers();
+
+  // 6. Fetch user credentials list
+  fetchUsersList();
+
+  // 7. Bind user creation form submit
+  if (formAddUser) {
+    formAddUser.addEventListener('submit', addUser);
+  }
 });
 
 // Setup UI Tab toggling & inputs
@@ -439,3 +454,113 @@ window.setPreset = function(type) {
     }, null, 2);
   }
 };
+
+// User Management Functions
+async function fetchUsersList() {
+  try {
+    const response = await fetch('/api/users');
+    if (!response.ok) throw new Error('Failed to fetch user accounts');
+    const users = await response.json();
+    renderUsersList(users);
+  } catch (err) {
+    console.error('Error fetching user accounts:', err);
+  }
+}
+
+function renderUsersList(users) {
+  if (!usersList) return;
+  usersList.innerHTML = '';
+
+  // Update badge count
+  if (userCountBadge) {
+    userCountBadge.textContent = `${users.length} Account${users.length === 1 ? '' : 's'}`;
+    if (users.length > 0) {
+      userCountBadge.className = 'badge online';
+    } else {
+      userCountBadge.className = 'badge offline';
+    }
+  }
+
+  if (users.length === 0) {
+    usersList.innerHTML = '<li class="empty-state">No credentials set (Broker is Public)</li>';
+    return;
+  }
+
+  users.forEach(username => {
+    const li = document.createElement('li');
+
+    const tagSpan = document.createElement('span');
+    tagSpan.className = 'username-tag';
+    tagSpan.innerHTML = `<i data-lucide="user"></i> <span>${username}</span>`;
+
+    const btnDelete = document.createElement('button');
+    btnDelete.className = 'btn-delete-user';
+    btnDelete.innerHTML = '<i data-lucide="trash-2"></i>';
+    btnDelete.title = `Delete ${username}`;
+    btnDelete.addEventListener('click', () => deleteUser(username));
+
+    li.appendChild(tagSpan);
+    li.appendChild(btnDelete);
+    usersList.appendChild(li);
+  });
+
+  // Re-render Lucide icons for the newly added dynamic nodes
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+async function addUser(e) {
+  if (e) e.preventDefault();
+  
+  const username = newUsernameInput.value.trim();
+  const password = newPasswordInput.value;
+
+  if (!username || password.length < 6) {
+    alert('Please enter a username, and a password containing at least 6 characters.');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to create credentials');
+
+    newUsernameInput.value = '';
+    newPasswordInput.value = '';
+
+    appendTerminalLine('System', `Account successfully created for: "${username}"`);
+    
+    // Refresh lists and stats
+    await fetchUsersList();
+    await fetchServerStats();
+  } catch (err) {
+    appendTerminalLine('SystemError', `Failed to create credentials: ${err.message}`);
+  }
+}
+
+async function deleteUser(username) {
+  if (!username) return;
+  if (!confirm(`Are you sure you want to delete the credentials for "${username}"?`)) return;
+
+  try {
+    const response = await fetch(`/api/users/${username}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to delete credentials');
+
+    appendTerminalLine('System', `Account deleted for: "${username}"`);
+
+    // Refresh lists and stats
+    await fetchUsersList();
+    await fetchServerStats();
+  } catch (err) {
+    appendTerminalLine('SystemError', `Failed to delete credentials: ${err.message}`);
+  }
+}

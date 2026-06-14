@@ -309,11 +309,17 @@ body {
 /* Workspace Grid */
 .workspace-grid {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: 1fr 1.2fr 1fr;
   gap: 1.5rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .workspace-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 750px) {
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -745,4 +751,62 @@ textarea {
   border-top: 1px solid var(--glass-border);
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+/* Users List Styling */
+.users-list-container {
+  border: 1px solid var(--glass-border);
+  background-color: rgba(8, 12, 21, 0.5);
+  border-radius: var(--radius-sm);
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+
+.users-list {
+  list-style: none;
+}
+
+.users-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 0.85rem;
+}
+
+.users-list li:last-child {
+  border-bottom: none;
+}
+
+.users-list li .username-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.users-list li .username-tag i {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-cyan);
+}
+
+.users-list li .btn-delete-user {
+  background: none;
+  border: none;
+  color: var(--accent-rose);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: var(--transition-smooth);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.users-list li .btn-delete-user:hover {
+  opacity: 1;
+  transform: scale(1.1);
 }

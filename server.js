@@ -7,10 +7,15 @@ const aedesFactory = require('aedes');
 // Initialize Aedes MQTT broker
 const aedes = aedesFactory();
 
+// Initialize Database
+const usersDb = require('./users-db');
+usersDb.init();
+
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Serve static dashboard files from the "public" directory
+// Middleware for JSON parsing and static assets
+app.use(express.json());
 app.use(express.static('public'));
 
 // Create HTTP server
@@ -31,28 +36,40 @@ let subscriptionsCount = 0;
 const clientList = new Set();
 const topicStats = {};
 
-// Optional authentication
-const MQTT_USERNAME = process.env.MQTT_USERNAME;
-const MQTT_PASSWORD = process.env.MQTT_PASSWORD;
-
-if (MQTT_USERNAME && MQTT_PASSWORD) {
-  console.log(`[AUTH] MQTT Broker Authentication is ENABLED. Username: ${MQTT_USERNAME}`);
-  aedes.authenticate = function (client, username, password, callback) {
-    const authorized = (username === MQTT_USERNAME && password && password.toString() === MQTT_PASSWORD);
-    if (!authorized) {
-      console.log(`[AUTH] Authentication FAILED for client: ${client ? client.id : 'unknown'}`);
-      const error = new Error('Unauthorized');
-      error.returnCode = 4; // Connection Refused: Bad user name or password
-      callback(error, null);
-    } else {
-      console.log(`[AUTH] Authentication SUCCESS for client: ${client ? client.id : 'unknown'}`);
+// Database-backed MQTT authentication
+aedes.authenticate = async function (client, username, password, callback) {
+  try {
+    const users = await usersDb.getUsers();
+    
+    // If no users exist, allow all connections (developer public mode)
+    if (users.length === 0) {
       callback(null, true);
+      return;
     }
-  };
-} else {
-  console.log("[AUTH] MQTT Broker is running in PUBLIC mode (no credentials required).");
-  console.log("[AUTH] Define MQTT_USERNAME and MQTT_PASSWORD environment variables to secure the broker.");
-}
+    
+    if (!username || !password) {
+      console.log(`[AUTH] Connection rejected: credentials required but missing for client: ${client ? client.id : 'unknown'}`);
+      const error = new Error('Auth error: credentials required');
+      error.returnCode = 4; // Username/password bad
+      callback(error, null);
+      return;
+    }
+
+    const authorized = await usersDb.authenticate(username, password.toString());
+    if (authorized) {
+      console.log(`[AUTH] Client ${client ? client.id : 'unknown'} authenticated successfully as user "${username}".`);
+      callback(null, true);
+    } else {
+      console.log(`[AUTH] Authentication failed for client ${client ? client.id : 'unknown'} with username "${username}".`);
+      const error = new Error('Auth error: invalid credentials');
+      error.returnCode = 4;
+      callback(error, null);
+    }
+  } catch (err) {
+    console.error('[AUTH] Authentication handler error:', err.message);
+    callback(err, null);
+  }
+};
 
 // Aedes event logging & stats collection
 aedes.on('client', function (client) {
@@ -103,18 +120,64 @@ aedes.on('publish', function (packet, client) {
   }
 });
 
+// User management API endpoints
+app.get('/api/users', async (req, res) => {
+  try {
+    const list = await usersDb.getUsers();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
+  try {
+    const success = await usersDb.createUser(username, password);
+    if (success) {
+      res.status(201).json({ success: true, message: `User ${username} created successfully.` });
+    } else {
+      res.status(500).json({ error: 'Failed to create user.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:username', async (req, res) => {
+  const { username } = req.params;
+  try {
+    const success = await usersDb.deleteUser(username);
+    if (success) {
+      res.json({ success: true, message: `User ${username} deleted.` });
+    } else {
+      res.status(404).json({ error: 'User not found or delete failed.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // REST Endpoint for broker stats
-app.get('/api/stats', (req, res) => {
-  res.json({
-    activeClients,
-    clientList: Array.from(clientList),
-    publishedMessages,
-    subscriptionsCount,
-    topicStats,
-    uptime: Math.floor(process.uptime()),
-    memory: process.memoryUsage().rss,
-    authEnabled: !!(MQTT_USERNAME && MQTT_PASSWORD)
-  });
+app.get('/api/stats', async (req, res) => {
+  try {
+    const users = await usersDb.getUsers();
+    res.json({
+      activeClients,
+      clientList: Array.from(clientList),
+      publishedMessages,
+      subscriptionsCount,
+      topicStats,
+      uptime: Math.floor(process.uptime()),
+      memory: process.memoryUsage().rss,
+      authEnabled: users.length > 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start HTTP Server

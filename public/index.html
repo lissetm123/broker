@@ -197,6 +197,39 @@
         </div>
       </section>
 
+      <!-- Panel 3: User Credentials Management -->
+      <section class="card glass users-panel">
+        <div class="card-header">
+          <i data-lucide="shield-check"></i>
+          <h2>User Credentials</h2>
+          <span class="badge offline" id="userCountBadge">0 Users</span>
+        </div>
+        <div class="card-content">
+          <form id="formAddUser" onsubmit="event.preventDefault();">
+            <div class="form-group">
+              <label for="newUsername">Username</label>
+              <input type="text" id="newUsername" placeholder="e.g. iot-device-1" required />
+            </div>
+            <div class="form-group">
+              <label for="newPassword">Password</label>
+              <input type="password" id="newPassword" placeholder="Minimum 6 characters" required />
+            </div>
+            <button type="submit" id="btnCreateUser" class="btn primary-btn btn-full">
+              <i data-lucide="user-plus"></i> Create User
+            </button>
+          </form>
+
+          <div class="panel-divider" style="height: 1px; background: var(--glass-border); margin: 0.5rem 0;"></div>
+
+          <label>Configured MQTT Accounts</label>
+          <div class="users-list-container">
+            <ul class="users-list" id="usersList">
+              <li class="empty-state">No users created yet (Broker is Public)</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Terminal Output -->
