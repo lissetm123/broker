@@ -1,0 +1,441 @@
+// Aether MQTT Console Client Scripts
+
+let mqttClient = null;
+const clientSubscriptions = new Set();
+let statsInterval = null;
+
+// DOM Selectors
+const wsUrlInput = document.getElementById('wsUrl');
+const clientIdInput = document.getElementById('clientId');
+const cleanSessionSelect = document.getElementById('cleanSession');
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
+const credentialsArea = document.getElementById('credentialsArea');
+const btnConnect = document.getElementById('btnConnect');
+const clientConnectionBadge = document.getElementById('clientConnectionBadge');
+
+const tabPub = document.getElementById('tabPub');
+const tabSub = document.getElementById('tabSub');
+const pubContent = document.getElementById('pubContent');
+const subContent = document.getElementById('subContent');
+
+const pubTopicInput = document.getElementById('pubTopic');
+const pubQosSelect = document.getElementById('pubQos');
+const pubRetainSelect = document.getElementById('pubRetain');
+const pubPayloadTextarea = document.getElementById('pubPayload');
+const btnPublish = document.getElementById('btnPublish');
+
+const subTopicInput = document.getElementById('subTopic');
+const btnSubscribe = document.getElementById('btnSubscribe');
+const clientSubscriptionsList = document.getElementById('clientSubscriptionsList');
+
+const terminalLog = document.getElementById('terminalLog');
+const btnClearTerminal = document.getElementById('btnClearTerminal');
+const chkAutoscroll = document.getElementById('chkAutoscroll');
+
+// Server Metrics Selectors
+const serverPulse = document.getElementById('serverPulse');
+const serverStatusText = document.getElementById('serverStatusText');
+const serverUptime = document.getElementById('serverUptime');
+const valConnections = document.getElementById('valConnections');
+const clientListText = document.getElementById('clientListText');
+const valMessages = document.getElementById('valMessages');
+const valSubscriptions = document.getElementById('valSubscriptions');
+const valMemory = document.getElementById('valMemory');
+const valUptimeDetailed = document.getElementById('valUptimeDetailed');
+
+// Default Initialization
+window.addEventListener('DOMContentLoaded', () => {
+  // 1. Auto-generate Client ID
+  const randomId = Math.random().toString(16).substring(2, 8).toUpperCase();
+  clientIdInput.value = `Aether-Console-${randomId}`;
+
+  // 2. Set default WS URL based on current host
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const defaultWsUrl = `${protocol}//${window.location.host}`;
+  wsUrlInput.value = defaultWsUrl;
+
+  // 3. Set a default JSON payload for Publish tab
+  setPreset('climate');
+
+  // 4. Start polling server stats
+  fetchServerStats();
+  statsInterval = setInterval(fetchServerStats, 2500);
+
+  // 5. Connect UI event handlers
+  setupUIEventHandlers();
+});
+
+// Setup UI Tab toggling & inputs
+function setupUIEventHandlers() {
+  // Tab Switcher
+  tabPub.addEventListener('click', () => {
+    tabPub.classList.add('active');
+    tabSub.classList.remove('active');
+    pubContent.classList.remove('hidden');
+    subContent.classList.add('hidden');
+  });
+
+  tabSub.addEventListener('click', () => {
+    tabSub.classList.add('active');
+    tabPub.classList.remove('active');
+    subContent.classList.remove('hidden');
+    pubContent.classList.add('hidden');
+  });
+
+  // Connect Button
+  btnConnect.addEventListener('click', () => {
+    if (mqttClient && mqttClient.connected) {
+      disconnectClient();
+    } else {
+      connectClient();
+    }
+  });
+
+  // Publish Button
+  btnPublish.addEventListener('click', publishMessage);
+
+  // Subscribe Button
+  btnSubscribe.addEventListener('click', subscribeTopic);
+
+  // Clear Terminal Button
+  btnClearTerminal.addEventListener('click', () => {
+    terminalLog.innerHTML = '<div class="terminal-line system-line">[System] Terminal log cleared.</div>';
+  });
+}
+
+// Format uptime helper
+function formatUptime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+// Fetch Server Metrics from express REST API
+async function fetchServerStats() {
+  try {
+    const response = await fetch('/api/stats');
+    if (!response.ok) throw new Error('API request failed');
+    const data = await response.json();
+
+    // Update Server Status Panel
+    serverPulse.className = 'status-pulse online';
+    serverStatusText.textContent = data.authEnabled ? 'Broker Online (Secured)' : 'Broker Online (Public)';
+    serverUptime.textContent = formatUptime(data.uptime);
+
+    // Update Metrics
+    valConnections.textContent = data.activeClients;
+    valMessages.textContent = data.publishedMessages;
+    valSubscriptions.textContent = data.subscriptionsCount;
+    
+    // Memory usage in MB
+    const memoryMB = Math.round(data.memory / 1024 / 1024);
+    valMemory.textContent = `${memoryMB} MB`;
+    
+    valUptimeDetailed.textContent = `Uptime: ${formatUptime(data.uptime)}`;
+
+    // Update client list subtext
+    if (data.clientList.length > 0) {
+      const displayClients = data.clientList.slice(0, 3).join(', ');
+      const overflow = data.clientList.length > 3 ? ` (+${data.clientList.length - 3} more)` : '';
+      clientListText.textContent = `Clients: ${displayClients}${overflow}`;
+    } else {
+      clientListText.textContent = 'No active devices connected';
+    }
+
+    // Dynamic visibility of credentials inputs if Auth is enabled on server
+    if (data.authEnabled) {
+      credentialsArea.style.display = 'grid';
+    } else {
+      credentialsArea.style.display = 'none';
+    }
+
+  } catch (error) {
+    serverPulse.className = 'status-pulse';
+    serverStatusText.textContent = 'Broker API Unreachable';
+    serverUptime.textContent = '--';
+    
+    valConnections.textContent = '-';
+    clientListText.textContent = 'Broker unreachable';
+    valMessages.textContent = '-';
+    valSubscriptions.textContent = '-';
+    valMemory.textContent = '- MB';
+  }
+}
+
+// Connect the built-in Console MQTT client
+function connectClient() {
+  const url = wsUrlInput.value.trim();
+  const clientId = clientIdInput.value.trim() || 'Aether-Console-Default';
+  const clean = cleanSessionSelect.value === 'true';
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
+
+  if (!url) {
+    appendTerminalLine('SystemError', 'WebSocket URL is required.');
+    return;
+  }
+
+  appendTerminalLine('System', `Connecting to broker at ${url}...`);
+  btnConnect.disabled = true;
+  btnConnect.innerHTML = '<i data-lucide="loader"></i> Connecting...';
+  lucide.createIcons();
+
+  const options = {
+    clientId,
+    clean,
+    connectTimeout: 5000,
+    reconnectPeriod: 0 // Do not auto-reconnect on console manual disconnects
+  };
+
+  if (username) {
+    options.username = username;
+    options.password = password;
+  }
+
+  try {
+    mqttClient = mqtt.connect(url, options);
+
+    mqttClient.on('connect', () => {
+      appendTerminalLine('Connection', `Connected successfully with Client ID: ${clientId}`);
+      
+      // Update UI
+      clientConnectionBadge.className = 'badge online';
+      clientConnectionBadge.textContent = 'Connected';
+      btnConnect.disabled = false;
+      btnConnect.innerHTML = '<i data-lucide="unplug"></i> Disconnect Client';
+      btnConnect.classList.replace('primary-btn', 'btn-secondary');
+      
+      // Enable Actions
+      btnPublish.disabled = false;
+      btnSubscribe.disabled = false;
+      
+      lucide.createIcons();
+    });
+
+    mqttClient.on('message', (topic, message, packet) => {
+      let payloadStr = '';
+      try {
+        payloadStr = message.toString();
+      } catch (err) {
+        payloadStr = '[Binary data]';
+      }
+      
+      const qos = packet.qos;
+      const retain = packet.retain ? ' (Retained)' : '';
+      appendTerminalLine('Publish', `[Topic: ${topic}] QoS ${qos}${retain} -> ${payloadStr}`);
+    });
+
+    mqttClient.on('close', () => {
+      appendTerminalLine('Disconnection', 'Client connection closed.');
+      resetClientUI();
+    });
+
+    mqttClient.on('error', (err) => {
+      appendTerminalLine('SystemError', `Client error: ${err.message || err}`);
+      resetClientUI();
+    });
+
+  } catch (err) {
+    appendTerminalLine('SystemError', `Failed to initialize client: ${err.message}`);
+    resetClientUI();
+  }
+}
+
+// Disconnect the built-in Console MQTT client
+function disconnectClient() {
+  if (mqttClient) {
+    appendTerminalLine('System', 'Disconnecting client...');
+    mqttClient.end(true, () => {
+      appendTerminalLine('System', 'Disconnected.');
+      resetClientUI();
+    });
+  }
+}
+
+// Reset Client UI when disconnected or on error
+function resetClientUI() {
+  mqttClient = null;
+  clientSubscriptions.clear();
+  renderSubscriptions();
+
+  clientConnectionBadge.className = 'badge offline';
+  clientConnectionBadge.textContent = 'Offline';
+  
+  btnConnect.disabled = false;
+  btnConnect.innerHTML = '<i data-lucide="plug"></i> Connect Client';
+  btnConnect.classList.replace('btn-secondary', 'primary-btn');
+  
+  btnPublish.disabled = true;
+  btnSubscribe.disabled = true;
+  
+  lucide.createIcons();
+}
+
+// Publish Message
+function publishMessage() {
+  if (!mqttClient || !mqttClient.connected) return;
+
+  const topic = pubTopicInput.value.trim();
+  const qos = parseInt(pubQosSelect.value) || 0;
+  const retain = pubRetainSelect.value === 'true';
+  const payload = pubPayloadTextarea.value;
+
+  if (!topic) {
+    appendTerminalLine('SystemError', 'Topic name is required to publish.');
+    return;
+  }
+
+  mqttClient.publish(topic, payload, { qos, retain }, (err) => {
+    if (err) {
+      appendTerminalLine('SystemError', `Publish failed: ${err}`);
+    } else {
+      // If we are subscribed to the topic (or a wildcard matching it),
+      // MQTT.js will automatically receive the message and fire 'message'.
+      // If not, let's log the publish event in the terminal for feedback.
+      appendTerminalLine('System', `Published to [${topic}] QoS ${qos} (Retain: ${retain})`);
+    }
+  });
+}
+
+// Subscribe to Topic
+function subscribeTopic() {
+  if (!mqttClient || !mqttClient.connected) return;
+
+  const topic = subTopicInput.value.trim();
+  if (!topic) return;
+
+  if (clientSubscriptions.has(topic)) {
+    appendTerminalLine('SystemError', `Already subscribed to ${topic}`);
+    return;
+  }
+
+  mqttClient.subscribe(topic, { qos: 0 }, (err) => {
+    if (err) {
+      appendTerminalLine('SystemError', `Failed to subscribe to ${topic}: ${err}`);
+    } else {
+      appendTerminalLine('Subscription', `Subscribed to topic filter: ${topic}`);
+      clientSubscriptions.add(topic);
+      renderSubscriptions();
+      subTopicInput.value = '';
+    }
+  });
+}
+
+// Unsubscribe from Topic
+function unsubscribeTopic(topic) {
+  if (!mqttClient || !mqttClient.connected) return;
+
+  mqttClient.unsubscribe(topic, (err) => {
+    if (err) {
+      appendTerminalLine('SystemError', `Failed to unsubscribe from ${topic}: ${err}`);
+    } else {
+      appendTerminalLine('Subscription', `Unsubscribed from topic filter: ${topic}`);
+      clientSubscriptions.delete(topic);
+      renderSubscriptions();
+    }
+  });
+}
+
+// Render subscription list in UI
+function renderSubscriptions() {
+  clientSubscriptionsList.innerHTML = '';
+
+  if (clientSubscriptions.size === 0) {
+    clientSubscriptionsList.innerHTML = '<li class="empty-state">No client-side subscriptions</li>';
+    return;
+  }
+
+  clientSubscriptions.forEach(topic => {
+    const li = document.createElement('li');
+    
+    const textSpan = document.createElement('span');
+    textSpan.className = 'topic-name';
+    textSpan.textContent = topic;
+
+    const qosSpan = document.createElement('span');
+    qosSpan.className = 'qos-badge';
+    qosSpan.textContent = 'QoS 0';
+    textSpan.appendChild(qosSpan);
+
+    const btnUnsub = document.createElement('button');
+    btnUnsub.className = 'btn-unsubscribe';
+    btnUnsub.innerHTML = '<i data-lucide="x"></i>';
+    btnUnsub.title = 'Unsubscribe';
+    btnUnsub.addEventListener('click', () => unsubscribeTopic(topic));
+
+    li.appendChild(textSpan);
+    li.appendChild(btnUnsub);
+    clientSubscriptionsList.appendChild(li);
+  });
+
+  lucide.createIcons();
+}
+
+// Write line into terminal
+function appendTerminalLine(type, text) {
+  const line = document.createElement('div');
+  
+  // Create timestamp
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'timestamp';
+  const now = new Date();
+  const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  timeSpan.textContent = `[${timeStr}]`;
+  line.appendChild(timeSpan);
+
+  // Add line type content
+  const contentSpan = document.createElement('span');
+  contentSpan.textContent = text;
+  line.appendChild(contentSpan);
+
+  // Class mapping
+  if (type === 'System') {
+    line.className = 'terminal-line system-line';
+  } else if (type === 'SystemError') {
+    line.className = 'terminal-line disconn-line';
+    contentSpan.style.color = 'var(--accent-rose)';
+  } else if (type === 'Connection') {
+    line.className = 'terminal-line conn-line';
+  } else if (type === 'Disconnection') {
+    line.className = 'terminal-line disconn-line';
+  } else if (type === 'Publish') {
+    line.className = 'terminal-line pub-line';
+  } else if (type === 'Subscription') {
+    line.className = 'terminal-line sub-line';
+  } else {
+    line.className = 'terminal-line';
+  }
+
+  terminalLog.appendChild(line);
+
+  // Autoscroll logic
+  if (chkAutoscroll.checked) {
+    terminalLog.scrollTop = terminalLog.scrollHeight;
+  }
+}
+
+// Populate payload presets
+window.setPreset = function(type) {
+  if (type === 'climate') {
+    pubTopicInput.value = 'home/sensors/climate';
+    pubPayloadTextarea.value = JSON.stringify({
+      sensor_id: "living-room-sensor",
+      temperature: 23.4,
+      humidity: 45.2,
+      timestamp: Math.floor(Date.now() / 1000)
+    }, null, 2);
+  } else if (type === 'alert') {
+    pubTopicInput.value = 'home/security/alerts';
+    pubPayloadTextarea.value = JSON.stringify({
+      device_id: "front-door-camera",
+      event: "motion_detected",
+      severity: "high",
+      clip_id: "rec_" + Math.random().toString(16).substring(2, 10)
+    }, null, 2);
+  }
+};

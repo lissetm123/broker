@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aether MQTT Broker Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- MQTT.js CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body>
+  <div class="background-grid"></div>
+  <div class="radial-glow"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <i data-lucide="radio"></i>
+        </div>
+        <div>
+          <h1>Aether MQTT</h1>
+          <span class="subtitle">Cloud WebSockets Broker</span>
+        </div>
+      </div>
+      <div class="server-status">
+        <div class="status-indicator">
+          <span class="status-pulse" id="serverPulse"></span>
+          <span class="status-text" id="serverStatusText">Connecting to API...</span>
+        </div>
+        <div class="header-divider"></div>
+        <div class="status-stat">
+          <i data-lucide="clock"></i>
+          <span>Uptime: <strong id="serverUptime">0s</strong></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Metrics Cards Grid -->
+    <section class="metrics-grid">
+      <div class="metric-card glass">
+        <div class="metric-header">
+          <span class="metric-title">Active Connections</span>
+          <div class="metric-icon connections">
+            <i data-lucide="users"></i>
+          </div>
+        </div>
+        <div class="metric-value" id="valConnections">0</div>
+        <div class="metric-footer" id="clientListText">No active devices</div>
+      </div>
+
+      <div class="metric-card glass">
+        <div class="metric-header">
+          <span class="metric-title">Messages Processed</span>
+          <div class="metric-icon messages">
+            <i data-lucide="activity"></i>
+          </div>
+        </div>
+        <div class="metric-value" id="valMessages">0</div>
+        <div class="metric-footer">Total published since start</div>
+      </div>
+
+      <div class="metric-card glass">
+        <div class="metric-header">
+          <span class="metric-title">Broker Subscriptions</span>
+          <div class="metric-icon subs">
+            <i data-lucide="hash"></i>
+          </div>
+        </div>
+        <div class="metric-value" id="valSubscriptions">0</div>
+        <div class="metric-footer">Across all connected clients</div>
+      </div>
+
+      <div class="metric-card glass">
+        <div class="metric-header">
+          <span class="metric-title">Memory Allocation</span>
+          <div class="metric-icon memory">
+            <i data-lucide="cpu"></i>
+          </div>
+        </div>
+        <div class="metric-value" id="valMemory">0 MB</div>
+        <div class="metric-footer" id="valUptimeDetailed">Uptime: 0m</div>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="workspace-grid">
+      
+      <!-- Panel 1: Built-in Client Settings -->
+      <section class="card glass console-panel">
+        <div class="card-header">
+          <i data-lucide="settings"></i>
+          <h2>Console Test Client</h2>
+          <span class="badge offline" id="clientConnectionBadge">Offline</span>
+        </div>
+        <div class="card-content">
+          <div class="form-group">
+            <label for="wsUrl">WebSocket Connection URL</label>
+            <input type="text" id="wsUrl" placeholder="ws://localhost:8080" />
+          </div>
+
+          <div class="grid-2-col">
+            <div class="form-group">
+              <label for="clientId">Client ID</label>
+              <input type="text" id="clientId" />
+            </div>
+            <div class="form-group">
+              <label for="cleanSession">Session Clean</label>
+              <select id="cleanSession">
+                <option value="true">True (Reset)</option>
+                <option value="false">False (Persistent)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-2-col credentials-inputs" id="credentialsArea" style="display: none;">
+            <div class="form-group">
+              <label for="username">Username</label>
+              <input type="text" id="username" placeholder="Required" />
+            </div>
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" placeholder="Required" />
+            </div>
+          </div>
+
+          <button id="btnConnect" class="btn primary-btn btn-full">
+            <i data-lucide="plug"></i> Connect Client
+          </button>
+        </div>
+      </section>
+
+      <!-- Panel 2: Publisher & Subscriber Controls -->
+      <section class="card glass action-panel">
+        <div class="tabs-container">
+          <button class="tab-btn active" id="tabPub">Publish</button>
+          <button class="tab-btn" id="tabSub">Subscribe</button>
+        </div>
+
+        <div class="tab-content" id="pubContent">
+          <div class="form-group">
+            <label for="pubTopic">Topic Name</label>
+            <input type="text" id="pubTopic" value="home/sensors/climate" />
+          </div>
+          <div class="grid-2-col">
+            <div class="form-group">
+              <label for="pubQos">QoS Level</label>
+              <select id="pubQos">
+                <option value="0">0 (At most once)</option>
+                <option value="1">1 (At least once)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="pubRetain">Retain Message</label>
+              <select id="pubRetain">
+                <option value="false">False</option>
+                <option value="true">True</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="pubPayload">Payload (String or JSON)</label>
+            <textarea id="pubPayload" rows="4"></textarea>
+          </div>
+          <div class="preset-buttons">
+            <button class="btn-secondary btn-sm" onclick="setPreset('climate')">Climate Preset</button>
+            <button class="btn-secondary btn-sm" onclick="setPreset('alert')">Alert Preset</button>
+          </div>
+          <button id="btnPublish" class="btn success-btn btn-full" disabled>
+            <i data-lucide="send"></i> Publish Message
+          </button>
+        </div>
+
+        <div class="tab-content hidden" id="subContent">
+          <div class="form-group">
+            <label for="subTopic">Topic Filter (supports wildcards + / #)</label>
+            <div class="input-with-btn">
+              <input type="text" id="subTopic" value="home/sensors/#" />
+              <button id="btnSubscribe" class="btn accent-btn" disabled>
+                <i data-lucide="plus"></i> Subscribe
+              </button>
+            </div>
+          </div>
+
+          <label>Active Subscriptions</label>
+          <div class="subscriptions-list-container">
+            <ul class="subscriptions-list" id="clientSubscriptionsList">
+              <li class="empty-state">No client-side subscriptions</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Terminal Output -->
+    <section class="card glass terminal-card">
+      <div class="card-header terminal-header">
+        <div class="header-left">
+          <div class="terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <h2>Subscription Live Terminal</h2>
+        </div>
+        <div class="terminal-controls">
+          <label class="toggle-control">
+            <input type="checkbox" id="chkAutoscroll" checked>
+            <span>Autoscroll</span>
+          </label>
+          <button id="btnClearTerminal" class="btn btn-secondary btn-sm">
+            <i data-lucide="trash-2"></i> Clear
+          </button>
+        </div>
+      </div>
+      <div class="terminal-body" id="terminalLog">
+        <div class="terminal-line system-line">[System] Welcome to the Aether MQTT Console. Subscriptions logged here in real-time.</div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div>Aether MQTT Broker &bull; Open-Source Node.js Core</div>
+      <div>Designed for Google Cloud Run & Firebase Hosting</div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    // Initialize Lucide icons on page load
+    lucide.createIcons();
+  </script>
+</body>
+</html>
