@@ -8,6 +8,18 @@ let dbType = 'file'; // 'file' or 'firestore'
 
 const LOCAL_DB_DIR = path.join(__dirname, 'data');
 const LOCAL_DB_FILE = path.join(LOCAL_DB_DIR, 'users.json');
+const LOCAL_ADMIN_FILE = path.join(LOCAL_DB_DIR, 'admin.json');
+
+function ensureLocalAdminFile() {
+  if (!fs.existsSync(LOCAL_DB_DIR)) {
+    fs.mkdirSync(LOCAL_DB_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(LOCAL_ADMIN_FILE)) {
+    // Default password is 'luis1971'
+    const defaultHash = hashPassword('luis1971');
+    fs.writeFileSync(LOCAL_ADMIN_FILE, JSON.stringify({ passwordHash: defaultHash }, null, 2));
+  }
+}
 
 // Helper to hash password using built-in crypto (SHA-256)
 function hashPassword(password) {
@@ -62,6 +74,7 @@ function init() {
 function setupFileDatabase() {
   dbType = 'file';
   ensureLocalDbFile();
+  ensureLocalAdminFile();
   console.log(`[DB] Local JSON database loaded at: ${LOCAL_DB_FILE}`);
 }
 
@@ -187,10 +200,77 @@ async function authenticate(username, password) {
   }
 }
 
+// Get local admin password hash
+async function getAdminPasswordHash() {
+  if (dbType === 'firestore') {
+    try {
+      const doc = await firestoreDb.collection('admin_config').doc('local_admin').get();
+      if (doc.exists) {
+        return doc.data().passwordHash;
+      }
+      // Default if not set in Firestore
+      return hashPassword('luis1971');
+    } catch (err) {
+      console.error('[DB] Failed to get admin password from Firestore:', err.message);
+      return hashPassword('luis1971');
+    }
+  } else {
+    ensureLocalAdminFile();
+    try {
+      const raw = fs.readFileSync(LOCAL_ADMIN_FILE, 'utf8');
+      const data = JSON.parse(raw || '{}');
+      return data.passwordHash || hashPassword('luis1971');
+    } catch (err) {
+      console.error('[DB] Failed to read local admin file:', err.message);
+      return hashPassword('luis1971');
+    }
+  }
+}
+
+// Update local admin password hash
+async function setAdminPasswordHash(newPassword) {
+  const passwordHash = hashPassword(newPassword);
+  if (dbType === 'firestore') {
+    try {
+      await firestoreDb.collection('admin_config').doc('local_admin').set({
+        passwordHash,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log('[DB] Updated local admin password in Firestore.');
+      return true;
+    } catch (err) {
+      console.error('[DB] Failed to update admin password in Firestore:', err.message);
+      return false;
+    }
+  } else {
+    ensureLocalAdminFile();
+    try {
+      fs.writeFileSync(LOCAL_ADMIN_FILE, JSON.stringify({ passwordHash }, null, 2));
+      console.log('[DB] Updated local admin password in local file database.');
+      return true;
+    } catch (err) {
+      console.error('[DB] Failed to write local admin password:', err.message);
+      return false;
+    }
+  }
+}
+
+// Authenticate local admin username and password
+async function authenticateAdmin(username, password) {
+  if (!username || !password) return false;
+  if (username !== 'luis' && username !== 'luis@example.com') return false;
+  const adminHash = await getAdminPasswordHash();
+  const inputHash = hashPassword(password);
+  return inputHash === adminHash;
+}
+
 module.exports = {
   init,
   getUsers,
   createUser,
   deleteUser,
-  authenticate
+  authenticate,
+  getAdminPasswordHash,
+  setAdminPasswordHash,
+  authenticateAdmin
 };

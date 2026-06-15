@@ -16,17 +16,26 @@ usersDb.init();
 async function requireAdmin(req, res, next) {
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
   
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // If no administrator email is configured, bypass verification (developer/local mode)
+    if (!ADMIN_EMAIL) {
+      return next();
+    }
+    return res.status(401).json({ error: 'Unauthorized: missing authorization header' });
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+  if (idToken === 'local-admin-token-luis') {
+    req.user = { email: ADMIN_EMAIL || 'luis@example.com' };
+    return next();
+  }
+
   // If no administrator email is configured, bypass verification (developer/local mode)
   if (!ADMIN_EMAIL) {
     return next();
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: missing authorization header' });
-  }
-
-  const idToken = authHeader.split('Bearer ')[1];
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     if (decodedToken.email !== ADMIN_EMAIL) {
@@ -69,12 +78,16 @@ server.on('upgrade', async (request, socket, head) => {
         return;
       }
       
-      const decodedToken = await admin.auth().verifyIdToken(token);
-      if (decodedToken.email !== ADMIN_EMAIL) {
-        console.log(`[AUTH] WS Upgrade rejected: email ${decodedToken.email} is not the administrator`);
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
+      if (token !== 'local-admin-token-luis') {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        if (decodedToken.email !== ADMIN_EMAIL) {
+          console.log(`[AUTH] WS Upgrade rejected: email ${decodedToken.email} is not the administrator`);
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      } else {
+        console.log(`[AUTH] WS Upgrade authorized via local bypass token.`);
       }
     } catch (err) {
       console.log(`[AUTH] WS Upgrade handshake rejected: ${err.message}`);
@@ -212,6 +225,38 @@ app.get('/api/config', (req, res) => {
   }
 
   res.json(config);
+});
+
+// Local login endpoint for bypass credentials
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  const authorized = await usersDb.authenticateAdmin(username, password);
+  if (authorized) {
+    console.log(`[AUTH] Successful local login for user: ${username}`);
+    return res.json({ token: 'local-admin-token-luis' });
+  }
+  console.log(`[AUTH] Failed local login attempt for user: ${username}`);
+  return res.status(401).json({ error: 'Invalid local administrator credentials.' });
+});
+
+// Change Administrator own password (local bypass credentials)
+app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+  try {
+    const success = await usersDb.setAdminPasswordHash(password);
+    if (success) {
+      console.log(`[AUTH] Administrator password changed successfully.`);
+      res.json({ success: true, message: 'Administrator password changed successfully.' });
+    } else {
+      res.status(500).json({ error: 'Failed to update administrator password.' });
+    }
+  } catch (err) {
+    console.error('[AUTH] Admin change-password error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // User management API endpoints (enforced admin security)

@@ -35,15 +35,15 @@
       <!-- Email/Password Sign In Form -->
       <form id="formAdminLogin" onsubmit="event.preventDefault();" style="width: 100%; display: flex; flex-direction: column; gap: 0.8rem;">
         <div class="form-group" style="text-align: left;">
-          <label for="adminEmail">Email Address</label>
-          <input type="email" id="adminEmail" required placeholder="admin@example.com" style="background-color: rgba(8, 12, 21, 0.4);" />
+          <label for="adminEmail">Email or Username</label>
+          <input type="text" id="adminEmail" required placeholder="admin@example.com or username" style="background-color: rgba(8, 12, 21, 0.4);" />
         </div>
         <div class="form-group" style="text-align: left;">
           <label for="adminPassword">Password</label>
           <input type="password" id="adminPassword" required placeholder="••••••••" style="background-color: rgba(8, 12, 21, 0.4);" />
         </div>
         <button type="submit" id="btnEmailLogin" class="btn primary-btn btn-full">
-          <i data-lucide="log-in"></i> Sign In with Email
+          <i data-lucide="log-in"></i> Sign In with Email/Username
         </button>
       </form>
 
@@ -317,6 +317,27 @@
       <div>Aether MQTT Broker &bull; Open-Source Node.js Core</div>
       <div>Designed for Google Cloud Run & Firebase Hosting</div>
     </footer>
+  </div>
+
+  <!-- Custom Modal for Admin Password Change -->
+  <div id="passwordModal" class="modal-overlay hidden">
+    <div class="modal-card glass">
+      <div class="modal-header">
+        <i data-lucide="key-round"></i>
+        <h3>Change Admin Password</h3>
+      </div>
+      <p class="modal-subtitle">Enter a new secure password (minimum 6 characters) for your administrator account.</p>
+      
+      <div class="form-group" style="text-align: left; margin-top: 0.5rem;">
+        <label for="newAdminPasswordInput">New Password</label>
+        <input type="password" id="newAdminPasswordInput" placeholder="••••••••" style="background-color: rgba(8, 12, 21, 0.4);" required />
+      </div>
+      
+      <div class="modal-actions" style="display: flex; gap: 0.75rem; margin-top: 1rem; justify-content: flex-end;">
+        <button id="btnCancelPasswordChange" class="btn btn-secondary btn-sm">Cancel</button>
+        <button id="btnConfirmPasswordChange" class="btn primary-btn btn-sm">Update Password</button>
+      </div>
+    </div>
   </div>
 
   <!-- Firebase Client SDKs -->

@@ -592,22 +592,151 @@ async function deleteUser(username) {
 }
 
 // Firebase Authentication and Client-side flow setup
+// Global Session helpers
+async function handleLoginSuccess(token, providerType) {
+  idToken = token;
+  document.getElementById('loginLoading').classList.remove('hidden');
+  try {
+    const testResponse = await fetch('/api/stats', {
+      headers: { 'Authorization': `Bearer ${idToken}` }
+    });
+
+    if (testResponse.status === 403) {
+      throw new Error('Access Denied: Only the administrator account is allowed access.');
+    }
+    if (!testResponse.ok) {
+      throw new Error(`Auth verification failed: ${testResponse.statusText}`);
+    }
+
+    document.getElementById('loginOverlay').classList.add('fade-out');
+    document.getElementById('appContainer').style.display = 'flex';
+    document.getElementById('loginLoading').classList.add('hidden');
+
+    const btnSignOut = document.getElementById('btnSignOut');
+    if (btnSignOut) btnSignOut.style.display = 'block';
+    document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'block');
+
+    if (providerType === 'password' || providerType === 'local') {
+      document.getElementById('adminActionsArea').style.display = 'block';
+      document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'block');
+    } else {
+      document.getElementById('adminActionsArea').style.display = 'none';
+      document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
+    }
+
+    updateWsUrlWithToken();
+    fetchServerStats();
+    fetchUsersList();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('loginLoading').classList.add('hidden');
+    document.getElementById('loginError').textContent = err.message;
+    document.getElementById('loginError').classList.remove('hidden');
+    handleSignOut();
+  }
+}
+
+function handleSignOut() {
+  idToken = null;
+  document.getElementById('loginOverlay').classList.remove('fade-out');
+  document.getElementById('appContainer').style.display = 'none';
+
+  const btnSignOut = document.getElementById('btnSignOut');
+  if (btnSignOut) btnSignOut.style.display = 'none';
+  document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'none');
+  document.getElementById('adminActionsArea').style.display = 'none';
+  document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
+
+  try {
+    if (window.firebase && firebase.apps.length > 0) {
+      firebase.auth().signOut().catch(() => {});
+    }
+  } catch (e) {}
+}
+
+// Firebase Authentication and Client-side flow setup
 async function initFirebaseAuth() {
+  // Bind Sign Out button Click
+  const btnSignOut = document.getElementById('btnSignOut');
+  if (btnSignOut) {
+    btnSignOut.addEventListener('click', () => {
+      handleSignOut();
+    });
+  }
+
+  // Bind Email/Password or Username/Password login form submit
+  const formAdminLogin = document.getElementById('formAdminLogin');
+  const adminEmailInput = document.getElementById('adminEmail');
+  const adminPasswordInput = document.getElementById('adminPassword');
+  
+  if (formAdminLogin) {
+    formAdminLogin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const emailOrUsername = adminEmailInput.value.trim();
+      const password = adminPasswordInput.value;
+      
+      document.getElementById('loginLoading').classList.remove('hidden');
+      document.getElementById('loginError').classList.add('hidden');
+      
+      // Check for local credentials bypass first
+      if (emailOrUsername === 'luis' || emailOrUsername === 'luis@example.com') {
+        try {
+          const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: emailOrUsername, password })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Authentication failed');
+          }
+          await handleLoginSuccess(data.token, 'local');
+        } catch (err) {
+          document.getElementById('loginLoading').classList.add('hidden');
+          document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
+          document.getElementById('loginError').classList.remove('hidden');
+        }
+        return;
+      }
+
+      // Fallback to Firebase Email/Password
+      try {
+        if (window.firebase && firebase.apps.length > 0) {
+          const auth = firebase.auth();
+          auth.signInWithEmailAndPassword(emailOrUsername, password).catch(err => {
+            document.getElementById('loginLoading').classList.add('hidden');
+            document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
+            document.getElementById('loginError').classList.remove('hidden');
+          });
+        } else {
+          throw new Error('Firebase Auth client not initialized.');
+        }
+      } catch (err) {
+        document.getElementById('loginLoading').classList.add('hidden');
+        document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
+        document.getElementById('loginError').classList.remove('hidden');
+      }
+    });
+  }
+
   try {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('Failed to load Firebase config from server');
     const config = await response.json();
 
-    // If no Firebase config keys are available on server, bypass login overlay (developer/local mode)
+    // If no Firebase config keys are available on server, hide Google login and default to local login form
     if (!config.apiKey || !config.projectId) {
-      console.log('[AUTH] Firebase App config missing on server. Bypassing Google Sign-In.');
-      authBypassed = true;
-      document.getElementById('loginOverlay').classList.add('fade-out');
-      document.getElementById('appContainer').style.display = 'flex';
+      console.log('[AUTH] Firebase App config missing on server. Defaulting to local administrator login.');
+      authBypassed = false;
       
-      // Load tables/metrics directly
-      fetchServerStats();
-      fetchUsersList();
+      const btnGoogleLogin = document.getElementById('btnGoogleLogin');
+      if (btnGoogleLogin) btnGoogleLogin.classList.add('hidden');
+      
+      const loginDividers = document.querySelectorAll('.login-divider');
+      loginDividers.forEach(d => d.style.display = 'none');
+      
+      document.getElementById('loginOverlay').classList.remove('fade-out');
+      document.getElementById('appContainer').style.display = 'none';
       return;
     }
 
@@ -628,60 +757,95 @@ async function initFirebaseAuth() {
       });
     });
 
-    // Bind Email/Password login form submit
-    const formAdminLogin = document.getElementById('formAdminLogin');
-    const adminEmailInput = document.getElementById('adminEmail');
-    const adminPasswordInput = document.getElementById('adminPassword');
-    
-    if (formAdminLogin) {
-      formAdminLogin.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const email = adminEmailInput.value.trim();
-        const password = adminPasswordInput.value;
-        
-        document.getElementById('loginLoading').classList.remove('hidden');
-        document.getElementById('loginError').classList.add('hidden');
-        
-        auth.signInWithEmailAndPassword(email, password).catch(err => {
-          document.getElementById('loginLoading').classList.add('hidden');
-          document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
-          document.getElementById('loginError').classList.remove('hidden');
-        });
-      });
-    }
-
-    // Bind header Sign Out button click
-    const btnSignOut = document.getElementById('btnSignOut');
-    if (btnSignOut) {
-      btnSignOut.addEventListener('click', () => {
-        auth.signOut().catch(err => {
-          console.error('[AUTH] Sign out failed:', err);
-        });
-      });
-    }
-
     // Bind Admin Change Password button click
     const btnChangeAdminPassword = document.getElementById('btnChangeAdminPassword');
-    if (btnChangeAdminPassword) {
-      btnChangeAdminPassword.addEventListener('click', async () => {
-        const currentUser = auth.currentUser;
-        if (!currentUser) return;
+    const passwordModal = document.getElementById('passwordModal');
+    const newAdminPasswordInput = document.getElementById('newAdminPasswordInput');
+    const btnCancelPasswordChange = document.getElementById('btnCancelPasswordChange');
+    const btnConfirmPasswordChange = document.getElementById('btnConfirmPasswordChange');
+
+    if (btnChangeAdminPassword && passwordModal) {
+      btnChangeAdminPassword.addEventListener('click', () => {
+        if (newAdminPasswordInput) newAdminPasswordInput.value = '';
+        passwordModal.classList.remove('hidden');
         
-        const newPassword = prompt(`Enter new password for Admin "${currentUser.email}" (minimum 6 characters):`);
-        if (!newPassword) return;
-        if (newPassword.length < 6) {
+        // Update subtitle to mention correct username/email if available
+        const subtitle = passwordModal.querySelector('.modal-subtitle');
+        if (idToken === 'local-admin-token-luis') {
+          if (subtitle) subtitle.textContent = 'Enter a new secure password (minimum 6 characters) for the local Administrator account.';
+        } else {
+          try {
+            if (window.firebase && firebase.apps.length > 0) {
+              const currentUser = firebase.auth().currentUser;
+              if (currentUser && subtitle) {
+                subtitle.textContent = `Enter a new secure password (minimum 6 characters) for Admin "${currentUser.email}".`;
+              }
+            }
+          } catch (e) {}
+        }
+      });
+    }
+
+    if (btnCancelPasswordChange && passwordModal) {
+      btnCancelPasswordChange.addEventListener('click', () => {
+        passwordModal.classList.add('hidden');
+      });
+    }
+
+    if (btnConfirmPasswordChange && passwordModal && newAdminPasswordInput) {
+      btnConfirmPasswordChange.addEventListener('click', async () => {
+        const newPassword = newAdminPasswordInput.value;
+        if (!newPassword || newPassword.length < 6) {
           alert('Password must be at least 6 characters.');
           return;
         }
-        
+
+        btnConfirmPasswordChange.disabled = true;
+        const originalText = btnConfirmPasswordChange.innerHTML;
+        btnConfirmPasswordChange.innerHTML = '<i data-lucide="loader" class="spin"></i> Updating...';
+        if (window.lucide) window.lucide.createIcons();
+
         try {
-          await currentUser.updatePassword(newPassword);
-          alert('Administrator password changed successfully!');
-          appendTerminalLine('System', 'Administrator account password updated successfully.');
+          if (idToken === 'local-admin-token-luis') {
+            // Local bypass flow
+            const headers = {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            };
+            const response = await fetch('/api/admin/change-password', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ password: newPassword })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to update local admin password');
+
+            alert('Administrator password changed successfully!');
+            appendTerminalLine('System', 'Local administrator account password updated successfully.');
+            passwordModal.classList.add('hidden');
+          } else {
+            // Firebase Auth flow
+            if (window.firebase && firebase.apps.length > 0) {
+              const auth = firebase.auth();
+              const currentUser = auth.currentUser;
+              if (!currentUser) throw new Error('No authenticated Firebase user found.');
+
+              await currentUser.updatePassword(newPassword);
+              alert('Administrator password changed successfully!');
+              appendTerminalLine('System', 'Administrator account password updated successfully.');
+              passwordModal.classList.add('hidden');
+            } else {
+              throw new Error('Authentication service is not initialized.');
+            }
+          }
         } catch (err) {
           console.error(err);
           alert(`Failed to change password: ${err.message}`);
           appendTerminalLine('SystemError', `Failed to update Admin password: ${err.message}`);
+        } finally {
+          btnConfirmPasswordChange.disabled = false;
+          btnConfirmPasswordChange.innerHTML = originalText;
+          if (window.lucide) window.lucide.createIcons();
         }
       });
     }
@@ -689,47 +853,10 @@ async function initFirebaseAuth() {
     // Listen for Auth changes
     auth.onAuthStateChanged(async (user) => {
       if (user) {
-        document.getElementById('loginLoading').classList.remove('hidden');
         try {
-          idToken = await user.getIdToken(true);
-          
-          // Verify ID token against server /api/stats endpoint
-          const testResponse = await fetch('/api/stats', {
-            headers: { 'Authorization': `Bearer ${idToken}` }
-          });
-
-          if (testResponse.status === 403) {
-            throw new Error('Access Denied: Only the administrator account is allowed access.');
-          }
-          if (!testResponse.ok) {
-            throw new Error(`Auth verification failed: ${testResponse.statusText}`);
-          }
-
-          // Verification Success: Hide login, show dashboard
-          document.getElementById('loginOverlay').classList.add('fade-out');
-          document.getElementById('appContainer').style.display = 'flex';
-          document.getElementById('loginLoading').classList.add('hidden');
-
-          // Show Sign Out buttons in header
-          if (btnSignOut) btnSignOut.style.display = 'block';
-          document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'block');
-
-          // Show change admin password panel if logged in via Email/Password credentials
+          const token = await user.getIdToken(true);
           const isEmailProvider = user.providerData.some(p => p.providerId === 'password');
-          if (isEmailProvider) {
-            document.getElementById('adminActionsArea').style.display = 'block';
-            document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'block');
-          } else {
-            document.getElementById('adminActionsArea').style.display = 'none';
-            document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
-          }
-
-          // Append token to default WS client URL field
-          updateWsUrlWithToken();
-
-          // Load stats
-          fetchServerStats();
-          fetchUsersList();
+          await handleLoginSuccess(token, isEmailProvider ? 'password' : 'google');
         } catch (err) {
           console.error(err);
           document.getElementById('loginLoading').classList.add('hidden');
@@ -738,21 +865,16 @@ async function initFirebaseAuth() {
           auth.signOut();
         }
       } else {
-        idToken = null;
-        document.getElementById('loginOverlay').classList.remove('fade-out');
-        document.getElementById('appContainer').style.display = 'none';
-
-        // Hide Sign Out and Admin Password controls
-        if (btnSignOut) btnSignOut.style.display = 'none';
-        document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'none');
-        document.getElementById('adminActionsArea').style.display = 'none';
-        document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
+        if (idToken !== 'local-admin-token-luis') {
+          handleSignOut();
+        }
       }
     });
   } catch (err) {
     console.error('[AUTH] Failed to initialize Firebase Auth client:', err);
-    document.getElementById('loginError').textContent = `Configuration Error: ${err.message}`;
-    document.getElementById('loginError').classList.remove('hidden');
+    // Do not show full-screen overlay configuration error if the user can still log in locally
+    // but log it to console or show a small warning
+    console.warn(`Configuration Warning: ${err.message}. Local login is still available.`);
   }
 }
 
