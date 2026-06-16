@@ -256,8 +256,20 @@ function connectClient() {
     });
 
     mqttClient.on('error', (err) => {
-      appendTerminalLine('SystemError', `Client error: ${err.message || err}`);
+      // Translate MQTT CONNACK error codes into readable messages
+      const msg = err.message || String(err);
+      let friendly = msg;
+      if (msg.includes('Connection refused') || msg.includes('Not authorized') || msg.includes('Bad username')) {
+        friendly = `Auth failed — wrong username/password. ${msg}`;
+      } else if (msg.includes('WebSocket') || msg.includes('ECONNREFUSED') || msg.includes('getaddrinfo')) {
+        friendly = `Cannot reach broker URL — check the WebSocket URL. ${msg}`;
+      }
+      appendTerminalLine('SystemError', `❌ ${friendly}`);
       resetClientUI();
+    });
+
+    mqttClient.on('offline', () => {
+      appendTerminalLine('SystemError', '❌ Broker unreachable — verify the WebSocket URL is correct and the server is running.');
     });
 
   } catch (err) {
