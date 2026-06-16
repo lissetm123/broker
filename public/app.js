@@ -59,20 +59,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const randomId = Math.random().toString(16).substring(2, 8).toUpperCase();
   clientIdInput.value = `Aether-Console-${randomId}`;
 
-  // 2. Set default WS URL based on current host
-  // If served from a Firebase App Hosting preview URL (*.hosted.app), derive the
-  // canonical Firebase Hosting URL (projectid.web.app) which properly proxies
-  // WebSocket connections to Cloud Run via firebase.json rewrites.
+  // 2. Set default WS URL — always use the same host that served the page.
+  // This guarantees WebSocket connections work on any environment (local, preview, production).
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  let resolvedHost = host;
-  const hostedAppMatch = host.match(/--([a-z0-9-]+)\.[a-z0-9-]+\.hosted\.app$/);
-  if (hostedAppMatch) {
-    // Extract project ID from pattern: appname--{projectId}.{region}.hosted.app
-    resolvedHost = `${hostedAppMatch[1]}.web.app`;
-    console.log(`[WS] Detected Firebase preview URL. Resolved broker host to: ${resolvedHost}`);
-  }
-  const defaultWsUrl = `${protocol}//${resolvedHost}`;
+  const defaultWsUrl = `${protocol}//${window.location.host}`;
   wsUrlInput.value = defaultWsUrl;
 
   // 3. Set a default JSON payload for Publish tab
