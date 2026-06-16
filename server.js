@@ -168,6 +168,47 @@ aedes.on('publish', function (packet, client) {
   }
 });
 
+// Helper to fetch from local Metadata Server
+function fetchMetadata(path) {
+  return new Promise((resolve) => {
+    http.get({
+      hostname: 'metadata.google.internal',
+      path: path,
+      headers: { 'Metadata-Flavor': 'Google' },
+      timeout: 1000
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data.trim()));
+    }).on('error', (err) => {
+      resolve(`Error: ${err.message}`);
+    });
+  });
+}
+
+// Debug endpoint to retrieve Cloud Run metadata
+app.get('/api/debug', async (req, res) => {
+  const projectId = await fetchMetadata('/computeMetadata/v1/project/project-id');
+  const projectNumber = await fetchMetadata('/computeMetadata/v1/project/numeric-project-id');
+  const regionRaw = await fetchMetadata('/computeMetadata/v1/instance/region');
+  
+  // Region metadata usually returns "projects/PROJECT_NUMBER/regions/REGION_NAME"
+  const region = regionRaw.includes('/') ? regionRaw.split('/').pop() : regionRaw;
+
+  res.json({
+    env: {
+      K_SERVICE: process.env.K_SERVICE,
+      K_REVISION: process.env.K_REVISION,
+      PORT: process.env.PORT
+    },
+    metadata: {
+      projectId,
+      projectNumber,
+      region
+    }
+  });
+});
+
 // Expose public Firebase configuration parameters
 app.get('/api/config', (req, res) => {
   const config = {
