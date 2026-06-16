@@ -624,7 +624,7 @@ async function handleLoginSuccess(token, providerType) {
       document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
     }
 
-    updateWsUrlWithToken();
+    // URL field stays fixed to window.location.host — no token appended.
     fetchServerStats();
     fetchUsersList();
   } catch (err) {
@@ -878,24 +878,7 @@ async function initFirebaseAuth() {
   }
 }
 
-function updateWsUrlWithToken() {
-  if (!wsUrlInput) return;
-  // Strip any existing token param and re-resolve the base host
-  // in case the field still holds the raw preview URL from before login
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  let resolvedHost = host;
-  const hostedAppMatch = host.match(/--([a-z0-9-]+)\.[a-z0-9-]+\.hosted\.app$/);
-  if (hostedAppMatch) {
-    resolvedHost = `${hostedAppMatch[1]}.web.app`;
-  }
-  const baseUrl = `${protocol}//${resolvedHost}`;
-  if (idToken) {
-    wsUrlInput.value = `${baseUrl}?token=${encodeURIComponent(idToken)}`;
-  } else {
-    wsUrlInput.value = baseUrl;
-  }
-}
+// updateWsUrlWithToken removed — broker URL is always window.location.host, no token needed.
 
 // Change MQTT Device Password handler
 async function changeMqttPassword(username) {
