@@ -209,12 +209,16 @@ app.get('/api/debug', async (req, res) => {
   });
 });
 
+// Cache for the resolved Cloud Run WS URL
+let cachedWsUrl = null;
+
 // Expose public Firebase configuration parameters
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
   const config = {
     apiKey: process.env.FIREBASE_API_KEY || "",
     authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
-    projectId: process.env.FIREBASE_PROJECT_ID || ""
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    wsUrl: ""
   };
 
   // Attempt to parse standard Firebase configuration environment variable
@@ -233,6 +237,26 @@ app.get('/api/config', (req, res) => {
   if (!config.projectId && admin && admin.apps.length > 0) {
     const appOptions = admin.apps[0].options;
     config.projectId = appOptions.projectId || (appOptions.credential && appOptions.credential.projectId);
+  }
+
+  // Resolve Cloud Run WebSocket URL dynamically
+  if (cachedWsUrl) {
+    config.wsUrl = cachedWsUrl;
+  } else {
+    try {
+      const projectNumber = await fetchMetadata('/computeMetadata/v1/project/numeric-project-id');
+      const regionRaw = await fetchMetadata('/computeMetadata/v1/instance/region');
+      const region = regionRaw.includes('/') ? regionRaw.split('/').pop() : regionRaw;
+      const serviceName = process.env.K_SERVICE || 'broker';
+
+      if (projectNumber && !projectNumber.startsWith('Error') && region && !region.startsWith('Error')) {
+        cachedWsUrl = `wss://${serviceName}-${projectNumber}.${region}.run.app`;
+        config.wsUrl = cachedWsUrl;
+        console.log(`[WS] Dynamically resolved Cloud Run WS URL: ${cachedWsUrl}`);
+      }
+    } catch (err) {
+      console.warn('[WS] Could not dynamically resolve Cloud Run WS URL:', err.message);
+    }
   }
 
   res.json(config);

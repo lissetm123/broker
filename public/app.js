@@ -729,6 +729,11 @@ async function initFirebaseAuth() {
     if (!response.ok) throw new Error('Failed to load Firebase config from server');
     const config = await response.json();
 
+    // If server has dynamically resolved direct Cloud Run WS URL, populate it
+    if (config.wsUrl && wsUrlInput) {
+      wsUrlInput.value = config.wsUrl;
+    }
+
     // If no Firebase config keys are available on server, hide Google login and default to local login form
     if (!config.apiKey || !config.projectId) {
       console.log('[AUTH] Firebase App config missing on server. Defaulting to local administrator login.');
