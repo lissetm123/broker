@@ -172,13 +172,6 @@ async function fetchServerStats() {
       clientListText.textContent = 'No active devices connected';
     }
 
-    // Dynamic visibility of credentials inputs if Auth is enabled on server
-    if (data.authEnabled) {
-      credentialsArea.style.display = 'grid';
-    } else {
-      credentialsArea.style.display = 'none';
-    }
-
   } catch (error) {
     serverPulse.className = 'status-pulse';
     serverStatusText.textContent = 'Broker API Unreachable';
