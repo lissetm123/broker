@@ -60,8 +60,19 @@ window.addEventListener('DOMContentLoaded', () => {
   clientIdInput.value = `Aether-Console-${randomId}`;
 
   // 2. Set default WS URL based on current host
+  // If served from a Firebase App Hosting preview URL (*.hosted.app), derive the
+  // canonical Firebase Hosting URL (projectid.web.app) which properly proxies
+  // WebSocket connections to Cloud Run via firebase.json rewrites.
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const defaultWsUrl = `${protocol}//${window.location.host}`;
+  const host = window.location.host;
+  let resolvedHost = host;
+  const hostedAppMatch = host.match(/--([a-z0-9-]+)\.[a-z0-9-]+\.hosted\.app$/);
+  if (hostedAppMatch) {
+    // Extract project ID from pattern: appname--{projectId}.{region}.hosted.app
+    resolvedHost = `${hostedAppMatch[1]}.web.app`;
+    console.log(`[WS] Detected Firebase preview URL. Resolved broker host to: ${resolvedHost}`);
+  }
+  const defaultWsUrl = `${protocol}//${resolvedHost}`;
   wsUrlInput.value = defaultWsUrl;
 
   // 3. Set a default JSON payload for Publish tab
@@ -880,9 +891,20 @@ async function initFirebaseAuth() {
 
 function updateWsUrlWithToken() {
   if (!wsUrlInput) return;
-  const currentVal = wsUrlInput.value.split('?')[0];
+  // Strip any existing token param and re-resolve the base host
+  // in case the field still holds the raw preview URL from before login
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  let resolvedHost = host;
+  const hostedAppMatch = host.match(/--([a-z0-9-]+)\.[a-z0-9-]+\.hosted\.app$/);
+  if (hostedAppMatch) {
+    resolvedHost = `${hostedAppMatch[1]}.web.app`;
+  }
+  const baseUrl = `${protocol}//${resolvedHost}`;
   if (idToken) {
-    wsUrlInput.value = `${currentVal}?token=${encodeURIComponent(idToken)}`;
+    wsUrlInput.value = `${baseUrl}?token=${encodeURIComponent(idToken)}`;
+  } else {
+    wsUrlInput.value = baseUrl;
   }
 }
 
