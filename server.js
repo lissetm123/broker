@@ -63,40 +63,10 @@ const server = http.createServer(app);
 // Create WebSocket server attached to the HTTP server (no server, upgrade manually)
 const wss = new ws.Server({ noServer: true });
 
-server.on('upgrade', async (request, socket, head) => {
-  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-  
-  if (ADMIN_EMAIL) {
-    try {
-      const parsedUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-      const token = parsedUrl.searchParams.get('token');
-      
-      if (!token) {
-        console.log(`[AUTH] WS Upgrade rejected: missing token query parameter`);
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      
-      if (token !== 'local-admin-token-luis') {
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        if (decodedToken.email !== ADMIN_EMAIL) {
-          console.log(`[AUTH] WS Upgrade rejected: email ${decodedToken.email} is not the administrator`);
-          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      } else {
-        console.log(`[AUTH] WS Upgrade authorized via local bypass token.`);
-      }
-    } catch (err) {
-      console.log(`[AUTH] WS Upgrade handshake rejected: ${err.message}`);
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-  }
-
+// All WebSocket upgrade connections are accepted at the transport level.
+// Authentication is handled at the MQTT protocol level by aedes.authenticate
+// using the MQTT CONNECT packet's username and password fields.
+server.on('upgrade', (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit('connection', ws, request);
   });

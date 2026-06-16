@@ -59,11 +59,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const randomId = Math.random().toString(16).substring(2, 8).toUpperCase();
   clientIdInput.value = `Aether-Console-${randomId}`;
 
-  // 2. Set default WS URL — always use the same host that served the page.
-  // This guarantees WebSocket connections work on any environment (local, preview, production).
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const defaultWsUrl = `${protocol}//${window.location.host}`;
-  wsUrlInput.value = defaultWsUrl;
+  // 2. Set default WS URL — always use the exact host that served this page.
+  // No token needed; MQTT username/password handles authentication.
+  const _proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const _defaultWsUrl = `${_proto}//${window.location.host}`;
+  const _wsInput = document.getElementById('wsUrl');
+  if (_wsInput) _wsInput.value = _defaultWsUrl;
 
   // 3. Set a default JSON payload for Publish tab
   setPreset('climate');
@@ -193,11 +194,9 @@ async function fetchServerStats() {
 
 // Connect the built-in Console MQTT client
 function connectClient() {
-  let url = wsUrlInput.value.trim();
-  if (idToken && !url.includes('token=')) {
-    const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}token=${encodeURIComponent(idToken)}`;
-  }
+  // Use the URL exactly as typed — no token appended.
+  // Authentication is handled at MQTT level via username/password.
+  const url = (wsUrlInput ? wsUrlInput.value.trim() : document.getElementById('wsUrl').value.trim());
   const clientId = clientIdInput.value.trim() || 'Aether-Console-Default';
   const clean = cleanSessionSelect.value === 'true';
   const username = usernameInput.value.trim();
