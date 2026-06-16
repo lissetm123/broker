@@ -59,6 +59,11 @@ window.addEventListener('DOMContentLoaded', () => {
   const randomId = Math.random().toString(16).substring(2, 8).toUpperCase();
   clientIdInput.value = `Aether-Console-${randomId}`;
 
+  // Ensure client credentials inputs are always visible (bypassing cached index.html display:none)
+  if (credentialsArea) {
+    credentialsArea.style.display = 'grid';
+  }
+
   // 2. Set default WS URL — always use the exact host that served this page.
   // No token needed; MQTT username/password handles authentication.
   const _proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
