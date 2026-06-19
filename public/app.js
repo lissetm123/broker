@@ -176,6 +176,36 @@ function formatUptime(seconds) {
   return `${hours}h ${remainingMinutes}m`;
 }
 
+// Diff-based chip reconciler — avoids wiping+rebuilding chips on every poll.
+// Only removes chips no longer in `items` and adds chips not yet rendered.
+function reconcileChips(container, items, className) {
+  const itemSet = new Set(items);
+
+  // Remove chips that are no longer in the list
+  Array.from(container.children).forEach(chip => {
+    if (!itemSet.has(chip.dataset.id)) {
+      container.removeChild(chip);
+    }
+  });
+
+  // Build a set of IDs currently rendered
+  const rendered = new Set(
+    Array.from(container.children).map(c => c.dataset.id)
+  );
+
+  // Append only new chips
+  items.forEach(id => {
+    if (!rendered.has(id)) {
+      const chip = document.createElement('span');
+      chip.className = className;
+      chip.dataset.id = id;
+      chip.title = id;
+      chip.textContent = id;
+      container.appendChild(chip);
+    }
+  });
+}
+
 // Fetch Server Metrics from express REST API
 async function fetchServerStats() {
   try {
@@ -201,37 +231,22 @@ async function fetchServerStats() {
     
     valUptimeDetailed.textContent = `Uptime: ${formatUptime(data.uptime)}`;
 
-    // Update client list subtext + chip list
+    // Update client list subtext + chip list (diff-based to avoid flicker)
     const clientChipList = document.getElementById('clientChipList');
     if (data.clientList.length > 0) {
       clientListText.textContent = `${data.clientList.length} device${data.clientList.length === 1 ? '' : 's'} connected`;
       if (clientChipList) {
-        clientChipList.innerHTML = '';
-        data.clientList.forEach(id => {
-          const chip = document.createElement('span');
-          chip.className = 'metric-chip client-chip';
-          chip.title = id;
-          chip.textContent = id;
-          clientChipList.appendChild(chip);
-        });
+        reconcileChips(clientChipList, data.clientList, 'metric-chip client-chip');
       }
     } else {
       clientListText.textContent = 'No active devices connected';
-      if (clientChipList) clientChipList.innerHTML = '';
+      if (clientChipList) reconcileChips(clientChipList, [], 'metric-chip client-chip');
     }
 
-    // Update broker topics chip list
+    // Update broker topics chip list (diff-based to avoid flicker)
     const brokerTopicChipList = document.getElementById('brokerTopicChipList');
     if (brokerTopicChipList) {
-      brokerTopicChipList.innerHTML = '';
-      const topics = data.brokerTopics || [];
-      topics.forEach(topic => {
-        const chip = document.createElement('span');
-        chip.className = 'metric-chip topic-chip';
-        chip.title = topic;
-        chip.textContent = topic;
-        brokerTopicChipList.appendChild(chip);
-      });
+      reconcileChips(brokerTopicChipList, data.brokerTopics || [], 'metric-chip topic-chip');
     }
 
   } catch (error) {
@@ -786,6 +801,99 @@ async function initFirebaseAuth() {
     });
   }
 
+  // Bind Admin Change Password button click (always, regardless of Firebase)
+  const btnChangeAdminPassword = document.getElementById('btnChangeAdminPassword');
+  const passwordModal = document.getElementById('passwordModal');
+  const newAdminPasswordInput = document.getElementById('newAdminPasswordInput');
+  const btnCancelPasswordChange = document.getElementById('btnCancelPasswordChange');
+  const btnConfirmPasswordChange = document.getElementById('btnConfirmPasswordChange');
+
+  if (btnChangeAdminPassword && passwordModal) {
+    btnChangeAdminPassword.addEventListener('click', () => {
+      if (newAdminPasswordInput) newAdminPasswordInput.value = '';
+      passwordModal.classList.remove('hidden');
+
+      // Update subtitle to mention correct username/email if available
+      const subtitle = passwordModal.querySelector('.modal-subtitle');
+      if (idToken === 'local-admin-token-luis') {
+        if (subtitle) subtitle.textContent = 'Enter a new secure password (minimum 6 characters) for the local Administrator account.';
+      } else {
+        try {
+          if (window.firebase && firebase.apps.length > 0) {
+            const currentUser = firebase.auth().currentUser;
+            if (currentUser && subtitle) {
+              subtitle.textContent = `Enter a new secure password (minimum 6 characters) for Admin "${currentUser.email}".`;
+            }
+          }
+        } catch (e) {}
+      }
+    });
+  }
+
+  if (btnCancelPasswordChange && passwordModal) {
+    btnCancelPasswordChange.addEventListener('click', () => {
+      passwordModal.classList.add('hidden');
+    });
+  }
+
+  if (btnConfirmPasswordChange && passwordModal && newAdminPasswordInput) {
+    btnConfirmPasswordChange.addEventListener('click', async () => {
+      const newPassword = newAdminPasswordInput.value;
+      if (!newPassword || newPassword.length < 6) {
+        alert('Password must be at least 6 characters.');
+        return;
+      }
+
+      btnConfirmPasswordChange.disabled = true;
+      const originalText = btnConfirmPasswordChange.innerHTML;
+      btnConfirmPasswordChange.innerHTML = '<i data-lucide="loader" class="spin"></i> Updating...';
+      if (window.lucide) window.lucide.createIcons();
+
+      try {
+        if (idToken === 'local-admin-token-luis') {
+          // Local bypass flow
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          };
+          const response = await fetch('/api/admin/change-password', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ password: newPassword })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Failed to update local admin password');
+
+          alert('Administrator password changed successfully!');
+          appendTerminalLine('System', 'Local administrator account password updated successfully.');
+          passwordModal.classList.add('hidden');
+        } else {
+          // Firebase Auth flow
+          if (window.firebase && firebase.apps.length > 0) {
+            const auth = firebase.auth();
+            const currentUser = auth.currentUser;
+            if (!currentUser) throw new Error('No authenticated Firebase user found.');
+
+            await currentUser.updatePassword(newPassword);
+            alert('Administrator password changed successfully!');
+            appendTerminalLine('System', 'Administrator account password updated successfully.');
+            passwordModal.classList.add('hidden');
+          } else {
+            throw new Error('Authentication service is not initialized.');
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        alert(`Failed to change password: ${err.message}`);
+        appendTerminalLine('SystemError', `Failed to update Admin password: ${err.message}`);
+      } finally {
+        btnConfirmPasswordChange.disabled = false;
+        btnConfirmPasswordChange.innerHTML = originalText;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
   try {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('Failed to load Firebase config from server');
@@ -829,98 +937,6 @@ async function initFirebaseAuth() {
       });
     });
 
-    // Bind Admin Change Password button click
-    const btnChangeAdminPassword = document.getElementById('btnChangeAdminPassword');
-    const passwordModal = document.getElementById('passwordModal');
-    const newAdminPasswordInput = document.getElementById('newAdminPasswordInput');
-    const btnCancelPasswordChange = document.getElementById('btnCancelPasswordChange');
-    const btnConfirmPasswordChange = document.getElementById('btnConfirmPasswordChange');
-
-    if (btnChangeAdminPassword && passwordModal) {
-      btnChangeAdminPassword.addEventListener('click', () => {
-        if (newAdminPasswordInput) newAdminPasswordInput.value = '';
-        passwordModal.classList.remove('hidden');
-        
-        // Update subtitle to mention correct username/email if available
-        const subtitle = passwordModal.querySelector('.modal-subtitle');
-        if (idToken === 'local-admin-token-luis') {
-          if (subtitle) subtitle.textContent = 'Enter a new secure password (minimum 6 characters) for the local Administrator account.';
-        } else {
-          try {
-            if (window.firebase && firebase.apps.length > 0) {
-              const currentUser = firebase.auth().currentUser;
-              if (currentUser && subtitle) {
-                subtitle.textContent = `Enter a new secure password (minimum 6 characters) for Admin "${currentUser.email}".`;
-              }
-            }
-          } catch (e) {}
-        }
-      });
-    }
-
-    if (btnCancelPasswordChange && passwordModal) {
-      btnCancelPasswordChange.addEventListener('click', () => {
-        passwordModal.classList.add('hidden');
-      });
-    }
-
-    if (btnConfirmPasswordChange && passwordModal && newAdminPasswordInput) {
-      btnConfirmPasswordChange.addEventListener('click', async () => {
-        const newPassword = newAdminPasswordInput.value;
-        if (!newPassword || newPassword.length < 6) {
-          alert('Password must be at least 6 characters.');
-          return;
-        }
-
-        btnConfirmPasswordChange.disabled = true;
-        const originalText = btnConfirmPasswordChange.innerHTML;
-        btnConfirmPasswordChange.innerHTML = '<i data-lucide="loader" class="spin"></i> Updating...';
-        if (window.lucide) window.lucide.createIcons();
-
-        try {
-          if (idToken === 'local-admin-token-luis') {
-            // Local bypass flow
-            const headers = {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            };
-            const response = await fetch('/api/admin/change-password', {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ password: newPassword })
-            });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Failed to update local admin password');
-
-            alert('Administrator password changed successfully!');
-            appendTerminalLine('System', 'Local administrator account password updated successfully.');
-            passwordModal.classList.add('hidden');
-          } else {
-            // Firebase Auth flow
-            if (window.firebase && firebase.apps.length > 0) {
-              const auth = firebase.auth();
-              const currentUser = auth.currentUser;
-              if (!currentUser) throw new Error('No authenticated Firebase user found.');
-
-              await currentUser.updatePassword(newPassword);
-              alert('Administrator password changed successfully!');
-              appendTerminalLine('System', 'Administrator account password updated successfully.');
-              passwordModal.classList.add('hidden');
-            } else {
-              throw new Error('Authentication service is not initialized.');
-            }
-          }
-        } catch (err) {
-          console.error(err);
-          alert(`Failed to change password: ${err.message}`);
-          appendTerminalLine('SystemError', `Failed to update Admin password: ${err.message}`);
-        } finally {
-          btnConfirmPasswordChange.disabled = false;
-          btnConfirmPasswordChange.innerHTML = originalText;
-          if (window.lucide) window.lucide.createIcons();
-        }
-      });
-    }
 
     // Listen for Auth changes
     auth.onAuthStateChanged(async (user) => {
