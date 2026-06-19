@@ -698,13 +698,9 @@ async function handleLoginSuccess(token, providerType) {
     if (btnSignOut) btnSignOut.style.display = 'block';
     document.querySelectorAll('.sign-out-divider').forEach(d => d.style.display = 'block');
 
-    if (providerType === 'password' || providerType === 'local') {
-      document.getElementById('adminActionsArea').style.display = 'block';
-      document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'block');
-    } else {
-      document.getElementById('adminActionsArea').style.display = 'none';
-      document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'none');
-    }
+    // Show Change Admin Password for all authenticated admins
+    document.getElementById('adminActionsArea').style.display = 'block';
+    document.querySelectorAll('.admin-action-divider').forEach(d => d.style.display = 'block');
 
     // URL field stays fixed to window.location.host — no token appended.
     fetchServerStats();
@@ -756,29 +752,26 @@ async function initFirebaseAuth() {
       e.preventDefault();
       const emailOrUsername = adminEmailInput.value.trim();
       const password = adminPasswordInput.value;
-      
+
       document.getElementById('loginLoading').classList.remove('hidden');
       document.getElementById('loginError').classList.add('hidden');
-      
-      // Check for local credentials bypass first
-      if (emailOrUsername === 'admin' || emailOrUsername === 'admin@example.com') {
-        try {
-          const response = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: emailOrUsername, password })
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Authentication failed');
-          }
+
+      // Always try local admin login first
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: emailOrUsername, password })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          // Local login succeeded — show admin actions area
           await handleLoginSuccess(data.token, 'local');
-        } catch (err) {
-          document.getElementById('loginLoading').classList.add('hidden');
-          document.getElementById('loginError').textContent = `Authentication failed: ${err.message}`;
-          document.getElementById('loginError').classList.remove('hidden');
+          return;
         }
-        return;
+        // Server returned 401 — not a local admin, fall through to Firebase
+      } catch (err) {
+        // Network error — fall through to Firebase
       }
 
       // Fallback to Firebase Email/Password
@@ -791,7 +784,7 @@ async function initFirebaseAuth() {
             document.getElementById('loginError').classList.remove('hidden');
           });
         } else {
-          throw new Error('Firebase Auth client not initialized.');
+          throw new Error('Invalid credentials.');
         }
       } catch (err) {
         document.getElementById('loginLoading').classList.add('hidden');
