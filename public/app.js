@@ -53,8 +53,30 @@ const newPasswordInput = document.getElementById('newPassword');
 const usersList = document.getElementById('usersList');
 const userCountBadge = document.getElementById('userCountBadge');
 
+// Apply a theme ('light' | 'dark') to the document and update the toggle icon
+function applyTheme(theme) {
+  const html = document.documentElement;
+  const iconSun  = document.getElementById('themeIconSun');
+  const iconMoon = document.getElementById('themeIconMoon');
+
+  if (theme === 'light') {
+    html.setAttribute('data-theme', 'light');
+    if (iconSun)  iconSun.classList.remove('hidden');
+    if (iconMoon) iconMoon.classList.add('hidden');
+  } else {
+    html.removeAttribute('data-theme');
+    if (iconSun)  iconSun.classList.add('hidden');
+    if (iconMoon) iconMoon.classList.remove('hidden');
+  }
+  if (window.lucide) window.lucide.createIcons();
+}
+
 // Default Initialization
 window.addEventListener('DOMContentLoaded', () => {
+  // 0. Apply saved theme preference
+  const savedTheme = localStorage.getItem('aether-theme') || 'dark';
+  applyTheme(savedTheme);
+
   // 1. Auto-generate Client ID
   const randomId = Math.random().toString(16).substring(2, 8).toUpperCase();
   clientIdInput.value = `Aether-Console-${randomId}`;
@@ -96,6 +118,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Setup UI Tab toggling & inputs
 function setupUIEventHandlers() {
+  // Theme toggle button
+  const btnToggleTheme = document.getElementById('btnToggleTheme');
+  if (btnToggleTheme) {
+    btnToggleTheme.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      localStorage.setItem('aether-theme', next);
+    });
+  }
+
   // Tab Switcher
   tabPub.addEventListener('click', () => {
     tabPub.classList.add('active');
@@ -168,13 +201,37 @@ async function fetchServerStats() {
     
     valUptimeDetailed.textContent = `Uptime: ${formatUptime(data.uptime)}`;
 
-    // Update client list subtext
+    // Update client list subtext + chip list
+    const clientChipList = document.getElementById('clientChipList');
     if (data.clientList.length > 0) {
-      const displayClients = data.clientList.slice(0, 3).join(', ');
-      const overflow = data.clientList.length > 3 ? ` (+${data.clientList.length - 3} more)` : '';
-      clientListText.textContent = `Clients: ${displayClients}${overflow}`;
+      clientListText.textContent = `${data.clientList.length} device${data.clientList.length === 1 ? '' : 's'} connected`;
+      if (clientChipList) {
+        clientChipList.innerHTML = '';
+        data.clientList.forEach(id => {
+          const chip = document.createElement('span');
+          chip.className = 'metric-chip client-chip';
+          chip.title = id;
+          chip.textContent = id;
+          clientChipList.appendChild(chip);
+        });
+      }
     } else {
       clientListText.textContent = 'No active devices connected';
+      if (clientChipList) clientChipList.innerHTML = '';
+    }
+
+    // Update broker topics chip list
+    const brokerTopicChipList = document.getElementById('brokerTopicChipList');
+    if (brokerTopicChipList) {
+      brokerTopicChipList.innerHTML = '';
+      const topics = data.brokerTopics || [];
+      topics.forEach(topic => {
+        const chip = document.createElement('span');
+        chip.className = 'metric-chip topic-chip';
+        chip.title = topic;
+        chip.textContent = topic;
+        brokerTopicChipList.appendChild(chip);
+      });
     }
 
   } catch (error) {
@@ -689,7 +746,7 @@ async function initFirebaseAuth() {
       document.getElementById('loginError').classList.add('hidden');
       
       // Check for local credentials bypass first
-      if (emailOrUsername === 'luis' || emailOrUsername === 'luis@example.com') {
+      if (emailOrUsername === 'admin' || emailOrUsername === 'admin@example.com') {
         try {
           const response = await fetch('/api/login', {
             method: 'POST',

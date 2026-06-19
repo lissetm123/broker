@@ -31,6 +31,219 @@
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ─── Light / Clear Theme ─────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-primary: #f0f4f8;
+  --bg-secondary: rgba(255, 255, 255, 0.85);
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-focus: rgba(59, 130, 246, 0.45);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --accent-primary: #3b82f6;   /* Sky blue */
+  --accent-cyan: #0ea5e9;
+  --accent-violet: #6366f1;
+  --accent-emerald: #10b981;
+  --accent-rose: #ef4444;
+  --accent-amber: #f59e0b;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.07);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.1);
+}
+
+/* Light theme: background & grid tint */
+[data-theme="light"] body {
+  background-color: var(--bg-primary);
+}
+
+[data-theme="light"] .background-grid {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+}
+
+[data-theme="light"] .radial-glow {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.07) 0%, rgba(99, 102, 241, 0.03) 50%, transparent 100%);
+}
+
+/* Light theme: glassmorphism cards */
+[data-theme="light"] .glass {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+
+[data-theme="light"] .glass:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14), var(--shadow-glow);
+}
+
+/* Light theme: header gradient text */
+[data-theme="light"] .logo-area h1 {
+  background: linear-gradient(to right, #0f172a, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-theme="light"] .logo-icon {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-violet));
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.35);
+}
+
+/* Light theme: server status bar */
+[data-theme="light"] .server-status {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+/* Light theme: inputs & selects */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: var(--glass-border-focus);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.15);
+  background-color: #ffffff;
+}
+
+/* Light theme: buttons */
+[data-theme="light"] .btn-secondary {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .btn-secondary:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.09);
+}
+
+[data-theme="light"] .primary-btn {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+[data-theme="light"] .primary-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+}
+
+/* Light theme: tab active line */
+[data-theme="light"] .tab-btn.active::after {
+  background-color: var(--accent-primary);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+/* Light theme: terminal body */
+[data-theme="light"] .terminal-body {
+  background-color: #1e293b;
+}
+
+/* Light theme: subscriptions & users list */
+[data-theme="light"] .subscriptions-list-container,
+[data-theme="light"] .users-list-container {
+  background-color: rgba(248, 250, 252, 0.9);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .subscriptions-list li,
+[data-theme="light"] .users-list li {
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+/* Light theme: scrollbars */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Light theme: login overlay */
+[data-theme="light"] .login-overlay {
+  background-color: var(--bg-primary);
+}
+
+[data-theme="light"] .login-card h2 {
+  background: linear-gradient(to right, #0f172a, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Light theme: modal backdrop */
+[data-theme="light"] .modal-overlay {
+  background-color: rgba(15, 23, 42, 0.4);
+}
+
+/* Light theme: metric icon overrides */
+[data-theme="light"] .metric-icon.connections { background: rgba(59, 130, 246, 0.1); color: var(--accent-primary); }
+[data-theme="light"] .metric-icon.messages   { background: rgba(14, 165, 233, 0.1); color: var(--accent-cyan); }
+
+/* Light theme: footer */
+[data-theme="light"] .app-footer {
+  color: var(--text-muted);
+}
+
+/* Light theme: header/footer dividers */
+[data-theme="light"] .app-header,
+[data-theme="light"] .app-footer {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Light theme: card-header border */
+[data-theme="light"] .card-header {
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .terminal-header {
+  background-color: rgba(30, 41, 59, 0.07);
+}
+
+/* Theme toggle button */
+#btnToggleTheme {
+  background: none;
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+#btnToggleTheme:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  transform: rotate(20deg);
+}
+
+[data-theme="light"] #btnToggleTheme:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+/* ──────────────────────────────────────────────────────────────── */
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -304,6 +517,65 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Chip list inside metric cards */
+.metric-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  max-height: 90px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.metric-chip-list:empty {
+  display: none;
+}
+
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: chipIn 0.2s ease;
+}
+
+@keyframes chipIn {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.metric-chip.client-chip {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent-primary);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.metric-chip.topic-chip {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+[data-theme="light"] .metric-chip.client-chip {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+[data-theme="light"] .metric-chip.topic-chip {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.25);
 }
 
 /* Workspace Grid */

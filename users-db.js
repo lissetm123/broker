@@ -15,8 +15,8 @@ function ensureLocalAdminFile() {
     fs.mkdirSync(LOCAL_DB_DIR, { recursive: true });
   }
   if (!fs.existsSync(LOCAL_ADMIN_FILE)) {
-    // Default password is 'luis1971'
-    const defaultHash = hashPassword('luis1971');
+    // Default admin credentials: username=admin, password=Simplimatic123
+    const defaultHash = hashPassword('Simplimatic123');
     fs.writeFileSync(LOCAL_ADMIN_FILE, JSON.stringify({ passwordHash: defaultHash }, null, 2));
   }
 }
@@ -209,20 +209,20 @@ async function getAdminPasswordHash() {
         return doc.data().passwordHash;
       }
       // Default if not set in Firestore
-      return hashPassword('luis1971');
+      return hashPassword('Simplimatic123');
     } catch (err) {
       console.error('[DB] Failed to get admin password from Firestore:', err.message);
-      return hashPassword('luis1971');
+      return hashPassword('Simplimatic123');
     }
   } else {
     ensureLocalAdminFile();
     try {
       const raw = fs.readFileSync(LOCAL_ADMIN_FILE, 'utf8');
       const data = JSON.parse(raw || '{}');
-      return data.passwordHash || hashPassword('luis1971');
+      return data.passwordHash || hashPassword('Simplimatic123');
     } catch (err) {
       console.error('[DB] Failed to read local admin file:', err.message);
-      return hashPassword('luis1971');
+      return hashPassword('Simplimatic123');
     }
   }
 }
@@ -258,7 +258,8 @@ async function setAdminPasswordHash(newPassword) {
 // Authenticate local admin username and password
 async function authenticateAdmin(username, password) {
   if (!username || !password) return false;
-  if (username !== 'luis' && username !== 'luis@example.com') return false;
+  // Accept 'admin' as the local administrator username
+  if (username !== 'admin' && username !== 'admin@example.com') return false;
   const adminHash = await getAdminPasswordHash();
   const inputHash = hashPassword(password);
   return inputHash === adminHash;

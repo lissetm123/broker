@@ -72,20 +72,26 @@
           <span class="subtitle">Cloud WebSockets Broker</span>
         </div>
       </div>
-      <div class="server-status">
-        <div class="status-indicator">
-          <span class="status-pulse" id="serverPulse"></span>
-          <span class="status-text" id="serverStatusText">Connecting to API...</span>
-        </div>
-        <div class="header-divider"></div>
-        <div class="status-stat">
-          <i data-lucide="clock"></i>
-          <span>Uptime: <strong id="serverUptime">0s</strong></span>
-        </div>
-        <div class="header-divider sign-out-divider" style="display: none;"></div>
-        <button id="btnSignOut" class="btn btn-secondary btn-sm sign-out-btn" style="display: none; padding: 0.35rem 0.75rem; font-size: 0.75rem;">
-          <i data-lucide="log-out"></i> Sign Out
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <button id="btnToggleTheme" title="Toggle light/dark theme" aria-label="Toggle theme">
+          <i data-lucide="sun" id="themeIconSun" class="hidden"></i>
+          <i data-lucide="moon" id="themeIconMoon"></i>
         </button>
+        <div class="server-status">
+          <div class="status-indicator">
+            <span class="status-pulse" id="serverPulse"></span>
+            <span class="status-text" id="serverStatusText">Connecting to API...</span>
+          </div>
+          <div class="header-divider"></div>
+          <div class="status-stat">
+            <i data-lucide="clock"></i>
+            <span>Uptime: <strong id="serverUptime">0s</strong></span>
+          </div>
+          <div class="header-divider sign-out-divider" style="display: none;"></div>
+          <button id="btnSignOut" class="btn btn-secondary btn-sm sign-out-btn" style="display: none; padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+            <i data-lucide="log-out"></i> Sign Out
+          </button>
+        </div>
       </div>
     </header>
 
@@ -100,6 +106,7 @@
         </div>
         <div class="metric-value" id="valConnections">0</div>
         <div class="metric-footer" id="clientListText">No active devices</div>
+        <div class="metric-chip-list" id="clientChipList"></div>
       </div>
 
       <div class="metric-card glass">
@@ -121,7 +128,8 @@
           </div>
         </div>
         <div class="metric-value" id="valSubscriptions">0</div>
-        <div class="metric-footer">Across all connected clients</div>
+        <div class="metric-footer">Active topics across all clients</div>
+        <div class="metric-chip-list" id="brokerTopicChipList"></div>
       </div>
 
       <div class="metric-card glass">

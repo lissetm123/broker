@@ -27,7 +27,7 @@ async function requireAdmin(req, res, next) {
 
   const idToken = authHeader.split('Bearer ')[1];
   if (idToken === 'local-admin-token-luis') {
-    req.user = { email: ADMIN_EMAIL || 'luis@example.com' };
+    req.user = { email: ADMIN_EMAIL || 'admin@example.com' };
     return next();
   }
 
@@ -57,6 +57,15 @@ const port = process.env.PORT || 8080;
 app.use(express.json());
 app.use(express.static('public'));
 
+// Normalize accidental double-slash URLs (e.g. //api/stats -> /api/stats)
+app.use((req, res, next) => {
+  if (req.path.includes('//')) {
+    const cleanPath = req.path.replace(/\/\/+/g, '/');
+    return res.redirect(301, cleanPath + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
+  }
+  next();
+});
+
 // Create HTTP server
 const server = http.createServer(app);
 
@@ -83,6 +92,7 @@ let publishedMessages = 0;
 let subscriptionsCount = 0;
 const clientList = new Set();
 const topicStats = {};
+const clientSubscriptions = new Map(); // clientId -> Set<topic>
 
 // Database-backed MQTT authentication
 aedes.authenticate = async function (client, username, password, callback) {
@@ -133,14 +143,17 @@ aedes.on('clientDisconnect', function (client) {
     console.log(`[CONN] Client disconnected: \x1b[31m${client.id}\x1b[0m`);
     clientList.delete(client.id);
     activeClients = clientList.size;
+    clientSubscriptions.delete(client.id);
   }
 });
 
 aedes.on('subscribe', function (subscriptions, client) {
   if (client) {
-    const topics = subscriptions.map(s => s.topic).join(', ');
-    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m subscribed to: ${topics}`);
+    const topics = subscriptions.map(s => s.topic);
+    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m subscribed to: ${topics.join(', ')}`);
     subscriptionsCount += subscriptions.length;
+    if (!clientSubscriptions.has(client.id)) clientSubscriptions.set(client.id, new Set());
+    topics.forEach(t => clientSubscriptions.get(client.id).add(t));
   }
 });
 
@@ -148,6 +161,9 @@ aedes.on('unsubscribe', function (subscriptions, client) {
   if (client) {
     console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m unsubscribed from: ${subscriptions.join(', ')}`);
     subscriptionsCount = Math.max(0, subscriptionsCount - subscriptions.length);
+    if (clientSubscriptions.has(client.id)) {
+      subscriptions.forEach(t => clientSubscriptions.get(client.id).delete(t));
+    }
   }
 });
 
@@ -271,7 +287,7 @@ app.post('/api/login', async (req, res) => {
     return res.json({ token: 'local-admin-token-luis' });
   }
   console.log(`[AUTH] Failed local login attempt for user: ${username}`);
-  return res.status(401).json({ error: 'Invalid local administrator credentials.' });
+  return res.status(401).json({ error: 'Invalid administrator credentials. Default: username=admin' });
 });
 
 // Change Administrator own password (local bypass credentials)
@@ -339,11 +355,24 @@ app.delete('/api/users/:username', requireAdmin, async (req, res) => {
 app.get('/api/stats', requireAdmin, async (req, res) => {
   try {
     const users = await usersDb.getUsers();
+
+    // Build a flat, deduplicated list of all broker-side subscribed topics
+    const brokerTopics = new Set();
+    clientSubscriptions.forEach(topics => topics.forEach(t => brokerTopics.add(t)));
+
+    // Build per-client subscription map for the response
+    const clientSubsMap = {};
+    clientSubscriptions.forEach((topics, clientId) => {
+      clientSubsMap[clientId] = Array.from(topics);
+    });
+
     res.json({
       activeClients,
       clientList: Array.from(clientList),
+      clientSubsMap,
       publishedMessages,
       subscriptionsCount,
+      brokerTopics: Array.from(brokerTopics),
       topicStats,
       uptime: Math.floor(process.uptime()),
       memory: process.memoryUsage().rss,
