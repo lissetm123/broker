@@ -243,10 +243,53 @@ async function fetchServerStats() {
       if (clientChipList) reconcileChips(clientChipList, [], 'metric-chip client-chip');
     }
 
-    // Update broker topics chip list (diff-based to avoid flicker)
-    const brokerTopicChipList = document.getElementById('brokerTopicChipList');
-    if (brokerTopicChipList) {
-      reconcileChips(brokerTopicChipList, data.brokerTopics || [], 'metric-chip topic-chip');
+    // Update broker device subscriptions list (grouped by client, diff-based state comparison to avoid flicker)
+    const brokerDeviceSubsList = document.getElementById('brokerDeviceSubsList');
+    if (brokerDeviceSubsList) {
+      const clientSubsMap = data.clientSubsMap || {};
+      // Filter out keys with empty subscriptions to avoid rendering devices without topics
+      const deviceIds = Object.keys(clientSubsMap).filter(id => clientSubsMap[id] && clientSubsMap[id].length > 0);
+      
+      if (deviceIds.length === 0) {
+        brokerDeviceSubsList.removeAttribute('data-state');
+        brokerDeviceSubsList.innerHTML = '<div class="empty-state" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">No active device subscriptions</div>';
+      } else {
+        const stateKey = JSON.stringify(clientSubsMap);
+        if (brokerDeviceSubsList.dataset.state !== stateKey) {
+          brokerDeviceSubsList.dataset.state = stateKey;
+          brokerDeviceSubsList.innerHTML = '';
+          
+          deviceIds.forEach(deviceId => {
+            const topics = clientSubsMap[deviceId] || [];
+            
+            const item = document.createElement('div');
+            item.className = 'device-subs-item';
+            
+            const header = document.createElement('div');
+            header.className = 'device-subs-name';
+            header.innerHTML = `<i data-lucide="smartphone"></i> <span>${deviceId}</span>`;
+            
+            const topicsContainer = document.createElement('div');
+            topicsContainer.className = 'device-subs-topics';
+            
+            topics.forEach(topic => {
+              const chip = document.createElement('span');
+              chip.className = 'metric-chip topic-chip';
+              chip.textContent = topic;
+              chip.title = topic;
+              topicsContainer.appendChild(chip);
+            });
+            
+            item.appendChild(header);
+            item.appendChild(topicsContainer);
+            brokerDeviceSubsList.appendChild(item);
+          });
+          
+          if (window.lucide) {
+            window.lucide.createIcons();
+          }
+        }
+      }
     }
 
   } catch (error) {

@@ -578,6 +578,54 @@ body {
   border-color: rgba(245, 158, 11, 0.25);
 }
 
+/* Device-grouped subscriptions styles */
+.device-subs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  max-height: 140px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.device-subs-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+
+[data-theme="light"] .device-subs-item {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.04);
+}
+
+.device-subs-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.device-subs-name i {
+  width: 12px;
+  height: 12px;
+  color: var(--accent-primary);
+}
+
+.device-subs-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+
 /* Workspace Grid */
 .workspace-grid {
   display: grid;

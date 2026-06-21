@@ -76,12 +76,25 @@ const wss = new ws.Server({ noServer: true });
 // Authentication is handled at the MQTT protocol level by aedes.authenticate
 // using the MQTT CONNECT packet's username and password fields.
 server.on('upgrade', (request, socket, head) => {
+  const ip = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
+  console.log(`[WS] Upgrade requested from IP: \x1b[36m${ip}\x1b[0m for URL: ${request.url}`);
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit('connection', ws, request);
   });
 });
 
 wss.on('connection', function (conn, req) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  console.log(`[WS] Connection established from IP: \x1b[36m${ip}\x1b[0m`);
+  
+  conn.on('close', () => {
+    console.log(`[WS] Connection closed from IP: \x1b[36m${ip}\x1b[0m`);
+  });
+
+  conn.on('error', (err) => {
+    console.error(`\x1b[31m[WS] Connection error from IP: ${ip}: ${err.message}\x1b[0m`);
+  });
+
   const stream = websocketStream(conn);
   aedes.handle(stream);
 });
@@ -94,19 +107,61 @@ const clientList = new Set();
 const topicStats = {};
 const clientSubscriptions = new Map(); // clientId -> Set<topic>
 
+// Helper to extract client IP address (handles WebSockets and standard TCP)
+function getClientIp(client) {
+  if (!client) return 'unknown';
+  if (client.req) {
+    const forwardedFor = client.req.headers && client.req.headers['x-forwarded-for'];
+    if (forwardedFor) {
+      return forwardedFor.split(',')[0].trim();
+    }
+    if (client.req.socket && client.req.socket.remoteAddress) {
+      return client.req.socket.remoteAddress;
+    }
+  }
+  if (client.conn) {
+    if (client.conn.remoteAddress) {
+      return client.conn.remoteAddress;
+    }
+    if (client.conn.socket && client.conn.socket.remoteAddress) {
+      return client.conn.socket.remoteAddress;
+    }
+  }
+  return 'unknown';
+}
+
+// Reconnect loop detector storage
+const connectionAttempts = new Map();
+
+// Periodically clean up stale connection attempts (older than 10 seconds)
+setInterval(() => {
+  const now = Date.now();
+  for (const [clientId, attempts] of connectionAttempts.entries()) {
+    const recent = attempts.filter(ts => now - ts < 10000);
+    if (recent.length === 0) {
+      connectionAttempts.delete(clientId);
+    } else {
+      connectionAttempts.set(clientId, recent);
+    }
+  }
+}, 60000).unref();
+
 // Database-backed MQTT authentication
 aedes.authenticate = async function (client, username, password, callback) {
+  const ip = getClientIp(client);
+  const clientId = client ? client.id : 'unknown';
   try {
     const users = await usersDb.getUsers();
     
     // If no users exist, allow all connections (developer public mode)
     if (users.length === 0) {
+      console.log(`[AUTH] Client ${clientId} connected from IP ${ip} with no credentials (public mode).`);
       callback(null, true);
       return;
     }
     
     if (!username || !password) {
-      console.log(`[AUTH] Connection rejected: credentials required but missing for client: ${client ? client.id : 'unknown'}`);
+      console.log(`[AUTH] Connection rejected: credentials required but missing for client: ${clientId} from IP ${ip}`);
       const error = new Error('Auth error: credentials required');
       error.returnCode = 4; // Username/password bad
       callback(error, null);
@@ -115,16 +170,16 @@ aedes.authenticate = async function (client, username, password, callback) {
 
     const authorized = await usersDb.authenticate(username, password.toString());
     if (authorized) {
-      console.log(`[AUTH] Client ${client ? client.id : 'unknown'} authenticated successfully as user "${username}".`);
+      console.log(`[AUTH] Client ${clientId} authenticated successfully from IP ${ip} as user "${username}".`);
       callback(null, true);
     } else {
-      console.log(`[AUTH] Authentication failed for client ${client ? client.id : 'unknown'} with username "${username}".`);
+      console.log(`[AUTH] Authentication failed for client ${clientId} from IP ${ip} with username "${username}".`);
       const error = new Error('Auth error: invalid credentials');
       error.returnCode = 4;
       callback(error, null);
     }
   } catch (err) {
-    console.error('[AUTH] Authentication handler error:', err.message);
+    console.error(`[AUTH] Authentication handler error for client ${clientId} from IP ${ip}:`, err.message);
     callback(err, null);
   }
 };
@@ -132,25 +187,76 @@ aedes.authenticate = async function (client, username, password, callback) {
 // Aedes event logging & stats collection
 aedes.on('client', function (client) {
   if (client) {
-    console.log(`[CONN] Client connected: \x1b[32m${client.id}\x1b[0m`);
+    const ip = getClientIp(client);
+    console.log(`[CONN] Client registering: \x1b[32m${client.id}\x1b[0m (IP: ${ip})`);
     clientList.add(client.id);
     activeClients = clientList.size;
+
+    // Reconnect loop detection (concerning client connection)
+    const now = Date.now();
+    const attempts = connectionAttempts.get(client.id) || [];
+    const recentAttempts = attempts.filter(ts => now - ts < 10000);
+    recentAttempts.push(now);
+    connectionAttempts.set(client.id, recentAttempts);
+
+    if (recentAttempts.length > 5) {
+      console.warn(`\x1b[33m[CONN][WARN] Client ${client.id} (IP: ${ip}) is in a rapid reconnect loop! (${recentAttempts.length} connections in 10s)\x1b[0m`);
+    }
+  }
+});
+
+aedes.on('clientReady', function (client) {
+  if (client) {
+    const ip = getClientIp(client);
+    console.log(`[CONN] Client ready and established: \x1b[32m${client.id}\x1b[0m (IP: ${ip})`);
   }
 });
 
 aedes.on('clientDisconnect', function (client) {
   if (client) {
-    console.log(`[CONN] Client disconnected: \x1b[31m${client.id}\x1b[0m`);
+    const ip = getClientIp(client);
+    console.log(`[CONN] Client disconnected: \x1b[31m${client.id}\x1b[0m (IP: ${ip})`);
     clientList.delete(client.id);
     activeClients = clientList.size;
     clientSubscriptions.delete(client.id);
   }
 });
 
+aedes.on('clientError', function (client, err) {
+  if (client) {
+    const ip = getClientIp(client);
+    console.error(`\x1b[31m[CONN][ERROR] Client error for ${client.id} (IP: ${ip}): ${err.message}\x1b[0m`);
+  } else {
+    console.error(`\x1b[31m[CONN][ERROR] Client error: ${err.message}\x1b[0m`);
+  }
+});
+
+aedes.on('connectionError', function (client, err) {
+  const clientId = client ? client.id : 'unknown';
+  const ip = getClientIp(client);
+  console.error(`\x1b[31m[CONN][ERROR] Connection error for client ${clientId} (IP: ${ip}): ${err.message}\x1b[0m`);
+});
+
+aedes.on('keepaliveTimeout', function (client) {
+  if (client) {
+    const ip = getClientIp(client);
+    console.warn(`\x1b[33m[CONN][WARN] Client ${client.id} (IP: ${ip}) timed out (keepalive timeout)\x1b[0m`);
+  }
+});
+
 aedes.on('subscribe', function (subscriptions, client) {
   if (client) {
+    const ip = getClientIp(client);
     const topics = subscriptions.map(s => s.topic);
-    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m subscribed to: ${topics.join(', ')}`);
+    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m (IP: ${ip}) subscribed to: ${topics.join(', ')}`);
+    
+    // Warn about wildcard subscriptions which can be resource-intensive or security issues
+    subscriptions.forEach(sub => {
+      if (sub.topic.includes('#') || sub.topic.includes('+')) {
+        console.warn(`\x1b[33m[SUB][WARN] Client ${client.id} (IP: ${ip}) subscribed to wildcard topic: "${sub.topic}"\x1b[0m`);
+      }
+    });
+
     subscriptionsCount += subscriptions.length;
     if (!clientSubscriptions.has(client.id)) clientSubscriptions.set(client.id, new Set());
     topics.forEach(t => clientSubscriptions.get(client.id).add(t));
@@ -159,7 +265,8 @@ aedes.on('subscribe', function (subscriptions, client) {
 
 aedes.on('unsubscribe', function (subscriptions, client) {
   if (client) {
-    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m unsubscribed from: ${subscriptions.join(', ')}`);
+    const ip = getClientIp(client);
+    console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m (IP: ${ip}) unsubscribed from: ${subscriptions.join(', ')}`);
     subscriptionsCount = Math.max(0, subscriptionsCount - subscriptions.length);
     if (clientSubscriptions.has(client.id)) {
       subscriptions.forEach(t => clientSubscriptions.get(client.id).delete(t));
@@ -174,13 +281,21 @@ aedes.on('publish', function (packet, client) {
     topicStats[topic] = (topicStats[topic] || 0) + 1;
     
     let payloadStr = '';
+    const payloadLength = packet.payload ? packet.payload.length : 0;
     try {
       payloadStr = packet.payload ? packet.payload.toString() : '';
     } catch (e) {
       payloadStr = '[Binary Data]';
     }
     const sender = client ? client.id : 'SERVER/BROKER';
-    console.log(`[PUB] Client \x1b[33m${sender}\x1b[0m published to \x1b[35m${topic}\x1b[0m: "${payloadStr.substring(0, 100)}"`);
+    const ip = getClientIp(client);
+    
+    // Log warnings for exceptionally large payloads (> 100KB)
+    if (payloadLength > 102400) {
+      console.warn(`\x1b[33m[PUB][WARN] Client ${sender} (IP: ${ip}) published a large payload of ${payloadLength} bytes to topic "${topic}"\x1b[0m`);
+    } else {
+      console.log(`[PUB] Client \x1b[33m${sender}\x1b[0m published to \x1b[35m${topic}\x1b[0m: "${payloadStr.substring(0, 100)}"`);
+    }
   }
 });
 
