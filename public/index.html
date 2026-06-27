@@ -196,12 +196,13 @@
         <div class="tabs-container">
           <button class="tab-btn active" id="tabPub">Publish</button>
           <button class="tab-btn" id="tabSub">Subscribe</button>
+          <button class="tab-btn" id="tabGuide">Topic Guide</button>
         </div>
 
         <div class="tab-content" id="pubContent">
           <div class="form-group">
             <label for="pubTopic">Topic Name</label>
-            <input type="text" id="pubTopic" value="home/sensors/climate" />
+            <input type="text" id="pubTopic" value="gateways/gateway1/configuration" />
           </div>
           <div class="grid-2-col">
             <div class="form-group">
@@ -223,9 +224,19 @@
             <label for="pubPayload">Payload (String or JSON)</label>
             <textarea id="pubPayload" rows="4"></textarea>
           </div>
-          <div class="preset-buttons">
-            <button class="btn-secondary btn-sm" onclick="setPreset('climate')">Climate Preset</button>
-            <button class="btn-secondary btn-sm" onclick="setPreset('alert')">Alert Preset</button>
+          <div class="form-group">
+            <label for="pubPresetSelect">Load Gateway Topic Preset</label>
+            <select id="pubPresetSelect" style="width: 100%; background: rgba(8, 12, 21, 0.4); color: var(--text-primary); border: 1px solid var(--glass-border); padding: 0.5rem; border-radius: 4px; font-size: 0.8rem;">
+              <option value="">-- Choose Gateway Topic Preset --</option>
+              <option value="config_cmd">1. Config Command (HMI -> Gateway)</option>
+              <option value="config_resp">2. Config Response (Gateway -> HMI)</option>
+              <option value="cred_verify">3. Credential Verify (HMI -> Gateway)</option>
+              <option value="cred_verify_resp">4. Credential Verify Response (Gateway -> HMI)</option>
+              <option value="live_telemetry">5. Live Client Telemetry (Gateway -> Broker)</option>
+              <option value="alarms">6. Threshold Alarm/Event (Gateway -> Broker)</option>
+              <option value="raw_telemetry">7. Raw Client Telemetry (Gateway -> Broker)</option>
+              <option value="status_heartbeat">8. Status & Heartbeat (Gateway -> Broker)</option>
+            </select>
           </div>
           <button id="btnPublish" class="btn success-btn btn-full" disabled>
             <i data-lucide="send"></i> Publish Message
@@ -236,7 +247,7 @@
           <div class="form-group">
             <label for="subTopic">Topic Filter (supports wildcards + / #)</label>
             <div class="input-with-btn">
-              <input type="text" id="subTopic" value="home/sensors/#" />
+              <input type="text" id="subTopic" value="gateways/#" />
               <button id="btnSubscribe" class="btn accent-btn" disabled>
                 <i data-lucide="plus"></i> Subscribe
               </button>
@@ -248,6 +259,81 @@
             <ul class="subscriptions-list" id="clientSubscriptionsList">
               <li class="empty-state">No client-side subscriptions</li>
             </ul>
+          </div>
+        </div>
+
+        <div class="tab-content hidden" id="guideContent" style="max-height: 400px; overflow-y: auto; padding-right: 0.5rem;">
+          <div style="display: flex; flex-direction: column; gap: 1rem; font-size: 0.82rem; line-height: 1.4;">
+            
+            <div class="guide-section">
+              <h4 style="color: var(--accent-primary); margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem;">
+                <i data-lucide="settings" style="width: 14px; height: 14px;"></i> 1. Gateway Config & Management
+              </h4>
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Configuration Commands</span> (HMI &rarr; Gateway):
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/configuration</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('config_cmd')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 0.15rem 0;" />
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Configuration Responses</span> (Gateway &rarr; HMI):
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/configuration/response</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('config_resp')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 0.15rem 0;" />
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Credential Verification</span> (HMI &rarr; Gateway):
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/configuration/credentials</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('cred_verify')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 0.15rem 0;" />
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Credential Responses</span> (Gateway &rarr; HMI):
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/configuration/credentials/response</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('cred_verify_resp')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="guide-section">
+              <h4 style="color: var(--accent-cyan); margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem;">
+                <i data-lucide="activity" style="width: 14px; height: 14px;"></i> 2. Telemetry & Alarms
+              </h4>
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Live Client Telemetry</span> (Gateway &rarr; Broker):
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/telemetry/{clientName}/{originalTopic}</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('live_telemetry')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 0.15rem 0;" />
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Threshold Alarms & Events</span>:
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/telemetry/{clientName}/{originalTopic}/alarms</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('alarms')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 0.15rem 0;" />
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Raw TCP Client Telemetry</span>:
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/telemetry/{clientName}/raw</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('raw_telemetry')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="guide-section">
+              <h4 style="color: var(--accent-rose); margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem;">
+                <i data-lucide="radio" style="width: 14px; height: 14px;"></i> 3. Gateway Presence
+              </h4>
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div>
+                  <span style="font-weight: 600; color: var(--text-secondary);">Gateway Status & Heartbeats</span>:
+                  <code style="display: block; background: rgba(8, 12, 21, 0.5); padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.75rem; margin: 0.2rem 0; word-break: break-all; border: 1px solid rgba(255,255,255,0.05);">gateways/{gatewayId}/status</code>
+                  <button class="btn btn-secondary btn-sm" onclick="setPreset('status_heartbeat')" style="padding: 0.15rem 0.4rem; font-size: 0.7rem; margin-top: 0.2rem; cursor: pointer;">Use Preset</button>
+                </div>
+              </div>
+            </div>
+            
           </div>
         </div>
       </section>

@@ -18,8 +18,11 @@ const clientConnectionBadge = document.getElementById('clientConnectionBadge');
 
 const tabPub = document.getElementById('tabPub');
 const tabSub = document.getElementById('tabSub');
+const tabGuide = document.getElementById('tabGuide');
 const pubContent = document.getElementById('pubContent');
 const subContent = document.getElementById('subContent');
+const guideContent = document.getElementById('guideContent');
+const pubPresetSelect = document.getElementById('pubPresetSelect');
 
 const pubTopicInput = document.getElementById('pubTopic');
 const pubQosSelect = document.getElementById('pubQos');
@@ -133,16 +136,38 @@ function setupUIEventHandlers() {
   tabPub.addEventListener('click', () => {
     tabPub.classList.add('active');
     tabSub.classList.remove('active');
+    tabGuide.classList.remove('active');
     pubContent.classList.remove('hidden');
     subContent.classList.add('hidden');
+    guideContent.classList.add('hidden');
   });
 
   tabSub.addEventListener('click', () => {
     tabSub.classList.add('active');
     tabPub.classList.remove('active');
+    tabGuide.classList.remove('active');
     subContent.classList.remove('hidden');
     pubContent.classList.add('hidden');
+    guideContent.classList.add('hidden');
   });
+
+  tabGuide.addEventListener('click', () => {
+    tabGuide.classList.add('active');
+    tabPub.classList.remove('active');
+    tabSub.classList.remove('active');
+    guideContent.classList.remove('hidden');
+    pubContent.classList.add('hidden');
+    subContent.classList.add('hidden');
+  });
+
+  // Presets Dropdown Selector
+  if (pubPresetSelect) {
+    pubPresetSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        setPreset(e.target.value);
+      }
+    });
+  }
 
   // Connect Button
   btnConnect.addEventListener('click', () => {
@@ -571,24 +596,95 @@ function appendTerminalLine(type, text) {
   }
 }
 
-// Populate payload presets
+// Populate payload presets based on Gateway topic structures
 window.setPreset = function(type) {
-  if (type === 'climate') {
-    pubTopicInput.value = 'home/sensors/climate';
-    pubPayloadTextarea.value = JSON.stringify({
-      sensor_id: "living-room-sensor",
-      temperature: 23.4,
-      humidity: 45.2,
-      timestamp: Math.floor(Date.now() / 1000)
-    }, null, 2);
-  } else if (type === 'alert') {
-    pubTopicInput.value = 'home/security/alerts';
-    pubPayloadTextarea.value = JSON.stringify({
-      device_id: "front-door-camera",
-      event: "motion_detected",
-      severity: "high",
-      clip_id: "rec_" + Math.random().toString(16).substring(2, 10)
-    }, null, 2);
+  let topic = '';
+  let payload = '';
+
+  const timestamp = Math.floor(Date.now() / 1000);
+
+  switch (type) {
+    case 'config_cmd':
+      topic = 'gateways/gateway1/configuration';
+      payload = JSON.stringify({
+        action: "get_status",
+        username: "admin",
+        password: "SimplimaticPassword"
+      }, null, 2);
+      break;
+    case 'config_resp':
+      topic = 'gateways/gateway1/configuration/response';
+      payload = JSON.stringify({
+        status: "success",
+        gatewayId: "gateway1",
+        uptime: 1250,
+        clientsConnected: 3,
+        timestamp: timestamp
+      }, null, 2);
+      break;
+    case 'cred_verify':
+      topic = 'gateways/gateway1/configuration/credentials';
+      payload = JSON.stringify({
+        action: "verify_credentials",
+        username: "gateway_user",
+        password: "secure_password"
+      }, null, 2);
+      break;
+    case 'cred_verify_resp':
+      topic = 'gateways/gateway1/configuration/credentials/response';
+      payload = JSON.stringify({
+        verified: true,
+        role: "operator",
+        timestamp: timestamp
+      }, null, 2);
+      break;
+    case 'live_telemetry':
+      topic = 'gateways/gateway1/telemetry/Sensor_Node_1/temp1';
+      payload = JSON.stringify({
+        value: 23.4,
+        unit: "C",
+        timestamp: timestamp
+      }, null, 2);
+      break;
+    case 'alarms':
+      topic = 'gateways/gateway1/telemetry/Sensor_Node_1/temp1/alarms';
+      payload = JSON.stringify({
+        event: "high_temperature",
+        value: 38.5,
+        threshold: 35.0,
+        severity: "critical",
+        timestamp: timestamp
+      }, null, 2);
+      break;
+    case 'raw_telemetry':
+      topic = 'gateways/gateway1/telemetry/Sensor_Node_1/raw';
+      payload = "RAW_DATA:01a4e2bc";
+      break;
+    case 'status_heartbeat':
+      topic = 'gateways/gateway1/status';
+      payload = JSON.stringify({
+        status: "online",
+        heartbeatInterval: 30,
+        timestamp: timestamp
+      }, null, 2);
+      break;
+    default:
+      return;
+  }
+
+  if (pubTopicInput) pubTopicInput.value = topic;
+  if (pubPayloadTextarea) pubPayloadTextarea.value = payload;
+
+  // Sync the presets dropdown selector value if it matches
+  if (pubPresetSelect) {
+    if (pubPresetSelect.value !== type) {
+      pubPresetSelect.value = type;
+    }
+  }
+
+  // Switch to the Publish tab so the user sees the preset populated
+  if (tabPub) {
+    tabPub.click();
   }
 };
 

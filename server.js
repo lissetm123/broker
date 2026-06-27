@@ -244,14 +244,90 @@ aedes.on('keepaliveTimeout', function (client) {
   }
 });
 
+// Validate topic structure based on the new Gateway Topic Structure schema
+function validateGatewayTopic(topic) {
+  if (topic.startsWith('$SYS/')) {
+    return { valid: true, schema: 'System' };
+  }
+  
+  const parts = topic.split('/');
+  if (parts[0] !== 'gateways') {
+    return { valid: false, reason: 'Topic must start with "gateways/"' };
+  }
+  
+  if (parts.length < 3) {
+    if (parts.length === 2 && parts[1] === '#') {
+      return { valid: true, schema: 'Wildcard Subscription' };
+    }
+    return { valid: false, reason: 'Topic is too short (must be gateways/{gatewayId}/...)' };
+  }
+  
+  const type = parts[2];
+  
+  if (type === 'status') {
+    if (parts.length === 3) {
+      return { valid: true, schema: 'Gateway Status & Heartbeats' };
+    }
+    return { valid: false, reason: 'Gateway status topic should not have subtopics' };
+  }
+  
+  if (type === 'configuration') {
+    if (parts.length === 3) {
+      return { valid: true, schema: 'Gateway Configuration Commands' };
+    }
+    if (parts.length === 4 && parts[3] === 'response') {
+      return { valid: true, schema: 'Gateway Configuration Responses' };
+    }
+    if (parts.length === 4 && parts[3] === 'credentials') {
+      return { valid: true, schema: 'Gateway Credential Verification' };
+    }
+    if (parts.length === 5 && parts[3] === 'credentials' && parts[4] === 'response') {
+      return { valid: true, schema: 'Gateway Credential Verification Responses' };
+    }
+    if (parts.includes('#') || parts.includes('+')) {
+      return { valid: true, schema: 'Configuration Wildcard Subscription' };
+    }
+    return { valid: false, reason: 'Invalid subpath under configuration' };
+  }
+  
+  if (type === 'telemetry') {
+    if (parts.length < 4) {
+      return { valid: false, reason: 'Telemetry topic requires a client name' };
+    }
+    
+    if (parts.length === 5 && parts[4] === 'raw') {
+      return { valid: true, schema: 'Raw TCP Client Telemetry' };
+    }
+    
+    const lastPart = parts[parts.length - 1];
+    if (lastPart === 'alarms') {
+      return { valid: true, schema: 'Threshold Alarms & Events' };
+    }
+    return { valid: true, schema: 'Live Client Telemetry' };
+  }
+  
+  if (parts.includes('#') || parts.includes('+')) {
+    return { valid: true, schema: 'Wildcard Subscription' };
+  }
+  
+  return { valid: false, reason: 'Invalid category (expected status, configuration, or telemetry)' };
+}
+
 aedes.on('subscribe', function (subscriptions, client) {
   if (client) {
     const ip = getClientIp(client);
     const topics = subscriptions.map(s => s.topic);
     console.log(`[SUB] Client \x1b[36m${client.id}\x1b[0m (IP: ${ip}) subscribed to: ${topics.join(', ')}`);
     
-    // Warn about wildcard subscriptions which can be resource-intensive or security issues
+    // Check topics against Gateway schema and warn if wildcard subscriptions are too generic
     subscriptions.forEach(sub => {
+      const validation = validateGatewayTopic(sub.topic);
+      if (!validation.valid) {
+        console.warn(`\x1b[33m[TOPIC][WARN] Client ${client.id} (IP: ${ip}) subscribed to non-standard topic: "${sub.topic}" (Reason: ${validation.reason})\x1b[0m`);
+      } else {
+        console.log(`\x1b[32m[TOPIC][VALID] Client ${client.id} (IP: ${ip}) subscribed to schema: [${validation.schema}] ("${sub.topic}")\x1b[0m`);
+      }
+      
       if (sub.topic.includes('#') || sub.topic.includes('+')) {
         console.warn(`\x1b[33m[SUB][WARN] Client ${client.id} (IP: ${ip}) subscribed to wildcard topic: "${sub.topic}"\x1b[0m`);
       }
@@ -290,6 +366,14 @@ aedes.on('publish', function (packet, client) {
     const sender = client ? client.id : 'SERVER/BROKER';
     const ip = getClientIp(client);
     
+    // Validate Gateway Topic Schema
+    const validation = validateGatewayTopic(topic);
+    if (!validation.valid) {
+      console.warn(`\x1b[33m[TOPIC][WARN] Client ${sender} (IP: ${ip}) published to non-standard topic "${topic}" (Reason: ${validation.reason})\x1b[0m`);
+    } else {
+      console.log(`\x1b[32m[TOPIC][VALID] Client ${sender} (IP: ${ip}) published to "${topic}" matching [${validation.schema}]\x1b[0m`);
+    }
+
     // Log warnings for exceptionally large payloads (> 100KB)
     if (payloadLength > 102400) {
       console.warn(`\x1b[33m[PUB][WARN] Client ${sender} (IP: ${ip}) published a large payload of ${payloadLength} bytes to topic "${topic}"\x1b[0m`);
